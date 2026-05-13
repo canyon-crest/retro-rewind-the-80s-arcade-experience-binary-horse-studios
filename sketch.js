@@ -1,173 +1,175 @@
-/*await Canvas();
-world.gravity.y = 10;
-
-let ball = new Sprite();
-ball.diameter = 50;
-ball.img = '🤪';
-
-let groundA = new Sprite();
-groundA.x = -120;
-groundA.width = 220;
-groundA.rotation = 30;
-groundA.physics = STATIC;
-
-let groundB = new Sprite();
-groundB.x = 120;
-groundB.width = 220;
-groundB.rotation = -30;
-groundB.physics = STATIC;
-
-q5.update = function () {
-	background('skyblue');
-	text('click to jump!', 0, -50);
-
-	if (mouse.presses()) ball.vel.y = -5;
-};*/
-
-/*
-let player, ground;
-let balls, activeAttacks;
-let facingRight = true;
-
-let attackCooldown = 0;
-let startupTimer = 0;
-let pendingAttack = null; // buffers attack id while in startup
-let groundedTimer = 0;    // coyote time
+let player;
+let bullets = [];
+let enemyBullets = [];
+let enemies = [];
+let score = 0;
+let groundLevel = 350; 
 
 function setup() {
-  createCanvas(800, 600);
-  world.gravity.y = 15;
-
-  ground = new Sprite(400, 580, 800, 40, 'static');
-  ground.color = '#388e3c';
-
-  player = new Sprite(400, 300, 40, 40);
-  player.text = '🦊';
-  player.textSize = 45;
-  player.color = '#00000000';
-  player.rotationLock = true;
-  player.friction = 0;
-
-  balls = new Group();
-  balls.diameter = 30;
-  balls.color = '#e91e63';
-  balls.bounciness = 0.9;
-
-  for(let i = 0; i < 15; i++) {
-    new balls.Sprite(random(100, 700), random(50, 400));
-  }
-
-  activeAttacks = new Group();
-  activeAttacks.collider = 'none'; // prevents hitbox from existing physically
-
-  player.overlaps(activeAttacks);
-  activeAttacks.overlaps(balls, handleHit);
+  createCanvas(800, 400);
+  player = new Player();
 }
 
 function draw() {
-  background('#81d4fa');
+  background(135, 206, 235); 
+  fill(100, 70, 50);
+  rect(0, groundLevel, width, height - groundLevel);
 
-  // if touching ground OR moving very slowly vertically, "grounded" (this is highly abusable; fix)
-  if (player.colliding(ground) || Math.abs(player.vel.y) < 0.1) {
-    groundedTimer = 6; // stay "grounded" for 6 frames after leaving a surface
-  } else if (groundedTimer > 0) {
-    groundedTimer--;
+  player.update();
+  player.show();
+
+  handleBullets(bullets, enemies, true);
+  handleEnemyBullets();
+
+  // Spawn enemies
+  if (frameCount % 120 === 0) {
+    enemies.push(new Enemy());
   }
 
-  if (kb.pressing('left')) {
-    player.vel.x = -6;
-    facingRight = false;
-  } else if (kb.pressing('right')) {
-    player.vel.x = 6;
-    facingRight = true;
-  } else {
-    player.vel.x = 0;
+  // Update enemies
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    enemies[i].update();
+    enemies[i].show();
+    enemies[i].shoot();
+
+    if (enemies[i].x < -50) enemies.splice(i, 1);
   }
 
-  if (kb.presses('up') && groundedTimer > 0) {
-    player.vel.y = -10;
-    groundedTimer = 0; // reset timer so we can't double jump
+  // Display score
+  fill(0);
+  textSize(24);
+  textAlign(LEFT, TOP);
+  text("Score: " + score, 10, 10);
+}
+
+function keyPressed() {
+  if (key === ' ' || keyCode === UP_ARROW) {
+    player.jump();
+  }
+  if (key === 'f' || key === 'F') { 
+    bullets.push(new Projectile(player.x + 20, player.y + 15, 10, color(255, 255, 0)));
+  }
+}
+
+class Player {
+  constructor() {
+    this.x = 100;
+    this.y = groundLevel - 40;
+    this.w = 30;
+    this.h = 40;
+    this.velocityY = 0;
+    this.gravity = 0.8;
+    this.speed = 5;
+    this.isJumping = false;
   }
 
-  if (attackCooldown > 0) attackCooldown--;
+  show() {
+    fill(50, 100, 255);
+    rect(this.x, this.y, this.w, this.h); 
+  }
 
-  if (kb.presses('space') && attackCooldown === 0 && startupTimer === 0) {
-    let isGrounded = groundedTimer > 0;
-    let holdingForward = (facingRight && kb.pressing('right')) || (!facingRight && kb.pressing('left'));
+  update() {
+    if (keyIsDown(LEFT_ARROW)) this.x -= this.speed;
+    if (keyIsDown(RIGHT_ARROW)) this.x += this.speed;
 
-    if (isGrounded) {
-      createAttack('ground_punch');
-    } else if (holdingForward) {
-      createAttack('air_forward');
+    this.y += this.velocityY;
+    if (this.y < groundLevel - this.h) {
+      this.velocityY += this.gravity;
     } else {
-      // startup frames for heavy move
-      startupTimer = 15; // 15 frames of wind-up
-      pendingAttack = 'air_explosion';
-      player.color = 'rgba(255, 0, 0, 0.3)'; // visual cue for startup
+      this.y = groundLevel - this.h;
+      this.velocityY = 0;
+      this.isJumping = false;
     }
+    this.x = constrain(this.x, 0, width - this.w);
   }
 
-  // process Startup Timer
-  if (startupTimer > 0) {
-    startupTimer--;
-    if (startupTimer === 0) {
-      createAttack(pendingAttack);
-      player.color = '#00000000'; // reset color
-    }
-  }
-
-  // recenter explosion on player
-  for (let a of activeAttacks) {
-    if (a.type === 'explosion') {
-      a.x = player.x;
-      a.y = player.y;
+  jump() {
+    if (!this.isJumping) {
+      this.velocityY = -15;
+      this.isJumping = true;
     }
   }
 }
 
-function createAttack(type) {
-  let a = new activeAttacks.Sprite();
-
-  if (type === 'ground_punch') {
-    a.width = 60; a.height = 30;
-    a.x = facingRight ? player.x + 40 : player.x - 40;
-    a.y = player.y;
-    a.life = 15;
-    a.strength = 2;
-    a.color = 'orange';
-  }
-  else if (type === 'air_forward') {
-    a.width = 100; a.height = 20;
-    a.x = facingRight ? player.x + 60 : player.x - 60;
-    a.y = player.y;
-    a.life = 8;
-    a.strength = 1;
-    a.color = 'cyan';
-  }
-  else if (type === 'air_explosion') {
-    a.diameter = 130;
-    a.x = player.x;
-    a.y = player.y;
-    a.life = 25;
-    a.strength = 3;
-    a.type = 'explosion'; // to track movement in draw()
-    a.color = 'red';
+class Projectile {
+  constructor(x, y, speed, col) {
+    this.x = x;
+    this.y = y;
+    this.speed = speed;
+    this.col = col;
+    this.r = 5;
   }
 
-  attackCooldown = a.life + 10;
+  update() { this.x += this.speed; }
+
+  show() {
+    fill(this.col);
+    ellipse(this.x, this.y, this.r * 2);
+  }
 }
 
-function handleHit(attack, ball) {
-  if (attack.strength === 1) { // WEAK
-    if (random() > 0.8) ball.remove();
-    else { ball.vel.x = attack.x < ball.x ? 15 : -15; ball.vel.y = -5; }
+class Enemy {
+  constructor() {
+    this.x = width;
+    this.y = groundLevel - 40;
+    this.w = 30;
+    this.h = 40;
+    this.speed = 2;
+
+    // Each enemy has its own shooting cooldown
+    this.shootCooldown = int(random(60, 150)); // frames between shots
+    this.lastShot = 0;
   }
-  else if (attack.strength === 2) { // MEDIUM
-    if (random() > 0.4) ball.remove();
-    else { ball.vel.x = attack.x < ball.x ? 20 : -20; ball.vel.y = -10; }
+
+  update() { this.x -= this.speed; }
+
+  show() {
+    fill(255, 50, 50); 
+    rect(this.x, this.y, this.w, this.h);
   }
-  else if (attack.strength === 3) { // STRONG
-    ball.remove();
+
+  shoot() {
+    if (frameCount - this.lastShot > this.shootCooldown) {
+      enemyBullets.push(new Projectile(this.x, this.y + 15, -7, color(255, 0, 0)));
+      this.lastShot = frameCount;
+    }
   }
 }
-*/
+
+function handleBullets(bArray, targetArray, isPlayer) {
+  for (let i = bArray.length - 1; i >= 0; i--) {
+    bArray[i].update();
+    bArray[i].show();
+    
+    for (let j = targetArray.length - 1; j >= 0; j--) {
+      if (collideRectCircle(targetArray[j].x, targetArray[j].y, targetArray[j].w, targetArray[j].h, bArray[i].x, bArray[i].y, bArray[i].r)) {
+        targetArray.splice(j, 1);
+        bArray.splice(i, 1);
+        score += 10;
+        break;
+      }
+    }
+    if (bArray[i] && (bArray[i].x > width || bArray[i].x < 0)) bArray.splice(i, 1);
+  }
+}
+
+function handleEnemyBullets() {
+  for (let i = enemyBullets.length - 1; i >= 0; i--) {
+    enemyBullets[i].update();
+    enemyBullets[i].show();
+
+    if (collideRectCircle(player.x, player.y, player.w, player.h, enemyBullets[i].x, enemyBullets[i].y, enemyBullets[i].r)) {
+      enemyBullets.splice(i, 1);
+      score -= 5;
+    }
+  }
+}
+
+function collideRectCircle(rx, ry, rw, rh, cx, cy, cr) {
+  let testX = cx;
+  let testY = cy;
+  if (cx < rx) testX = rx; else if (cx > rx + rw) testX = rx + rw;
+  if (cy < ry) testY = ry; else if (cy > ry + rh) testY = ry + rh;
+  let d = dist(cx, cy, testX, testY);
+  return d <= cr;
+}
