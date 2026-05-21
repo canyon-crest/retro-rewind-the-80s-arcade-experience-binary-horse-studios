@@ -1,17 +1,33 @@
 ﻿window.exe = _ => eval(_);
 
-await Canvas();
+await Canvas(1600, 900);
 noSmooth();
+
+canvas.style.position = "fixed";
+
+window.onresize = function() {
+	if (window.innerHeight / window.innerWidth > height / width) {
+		canvas.style.width = "100%";
+		canvas.style.height = `${(height / width) * window.innerWidth}px`;
+		canvas.style.left = "0";
+		canvas.style.top = `${(window.innerHeight - (height / width) * window.innerWidth) * 0.5}px`; // center the canvas vertically
+	}
+	else {
+		canvas.style.width = `${(width / height) * window.innerHeight}px`;
+		canvas.style.height = "100%";
+		canvas.style.left = `${(window.innerWidth - (width / height) * window.innerHeight) * 0.5}px`; // center the canvas horizontally
+		canvas.style.top = "0";
+	}
+}
+window.onresize();
+
+
 camera.zoom = 1;
 camera.x = 0;
-camera.y = 300;
+camera.y = height / 2;
 world.gravity.y = 15;
 
 import { createProjectile } from './items.js';
-
-let player;
-let ground;
-let balls;
 
 let pdata = {
     facingRight: true,
@@ -28,12 +44,29 @@ let pdata = {
 
 const corridorBG = await loadImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAAoCAYAAADAOHfQAAAFCklEQVR4AexdPY4UPRD116Rf9mX7BdyAcCRyUqQl4hpcg7sQzAEgQwR7CoTQRpAiNmHxW7ZaNaZcbve6Sz3wpH7rnyq/Z5dd3b07I5gOh8MtwRjwDJzXGUgp3QLT1dVVKnFxcZGAsn9tG1yANR79gGVb0wcuoDYWNqBm7+0HF2CNQz9g2db0gQuojYUNqNl7+8EFWOPQD1i2NX3gAmpjYQNq9t5+cAHWOPQDlm1NH7iANWMxJifq3YU6gEa+4aJI091P/mAEGIHdRqBMWt02E/h4PA5djMfn2dZMosXXsvdqenyerVcH/i2+lh0cPfD4PFuPhvi2+Fp24VlaenyebSm/9hvBp5MW3NI2ExgOfwG4REbgrCIgSasnbSbw5eWl9nlw3ePzbGuEW3wte6+mx+fZenXg3+Jr2cHRA4/Ps/VoiG+Lr2UXnqWlx+fZlvJrv9F8mttMYO3AOiPACOw3AmYCP+id/dGrlDJub26SwOPzbM2wZZ0eLfBF6kVqcW2IQAWd5yR63yqzrnbLX6DhYCYwDDPuF49EWYQ88Pbb6/xzxRWphelF6kVqtdd2d5M92c88hvuWg1Be0ftW6httfCQlSWwm8PzOjslnAmxsD/KQk2vmO+n91ZhtAVpQjNSL1OLaXifvjCI+GvPe6M77+mwLOpP3sqsKM4E1E4Ki21vWI7Wwjki9SC2uDREYg+h9WzprPIXhayaw/A5w+fxjevHy5YMBoRoitTCHSL1ILa6t75wiXjVE71ttHq1+JLGZwDIQCxkF4ayVo3TAU9PQ/fAbBc1r1UfpgMfiL/vgNwold9kepQOekttqw++BSDLe4td94jei1Lwj62YCz78DDFLy+DzbGvkWX8veq+nxebZeHfi3+Fp2cPTA4/NsPRri2+Jr2YVnaenxebal/NpvNJ/mNhNYO7DOCDAC+42AmcB4ZRg5ZY/Ps62ZQ4uvZe/V9Pg8W68O/Ft8LTs4euDxebYeDfFt8bXswrO09Pg821J+7TeaT3ObCawduuv403uGfIkDZTfH0gFZB59lQkOwdOgqv0i9SC0EI1IvUusPX5uZwCfv7PfBRqKkR7++ZeXWc8DKP72f8GW7vk5sG2tBN1IvUotrc85mDs6ez2Se3urLTOCZDQmVG1h8D/KQ/itSC7OL1IvU4trML3QgLN2I3reOCV5fXyfATGD9zo7E7eA1XTVf6aBtW2tBO1IvUotrQwSWQ+9NOUrbIs5kqb+0Xf0cWF79Rn2RQ/isiYktQgv6kXqRWlxb3xc5ZG8QtxJiizqTpf6SNpIXftUnMO5CowHBEqM1hK/UkbbY+8vj/AWA4/H4W134dXk0/Eb0aQ1dH8FtcWgNqVt+I/qEvyxHcFscpQ7alt+IPnCPhpnAo0XIxwgwAttEgAm8TVzJygiERIAJHBJmijAC20SACbxNXP8wVi5nTxHAx0cyHyawRIIlI7DzCMi/woF/nVKSmAm8803j9BgBREAnL9oC/N9ICUbiwDgcGIO95gESFk9elADqeApPb66+J4Ix4BmonYH99H9KT5IG9mx6+v/XRDAGPAPneQb4OzDeRwhG4EwjMH3+8jgRjAHPwHmegendv+/TPzcfEkvGgefg/PJgevZ1Sm//+5E2KcnLuPJ8bZpfE5OXNy/evM/3IcYnMJ8Qmz4heHPY9ubAJzBf8/maf8Y3cT6Bt9o88vLJHvBw4BM4IMh8jdz2NfJvju9PAAAA//+D7uq9AAAABklEQVQDABKMPA4wFkJmAAAAAElFTkSuQmCC");
 
+
+let player;
+
+let terrain;
+let ground;
+let walls = [];
+
+let balls;
+
 { // create environmental objects
-    ground = new Sprite(0, 486, 80000, 40);
-    ground.physics = "static";
-    // ground.color = '#388e3c';
+    terrain = new Group();
+    terrain.physics = "static";
+    terrain.bounciness = 0; // BY DEFAULT
+
+    const surfaceY = 700;
+    ground = new terrain.Sprite(0, surfaceY + 37, 80000, 74);
     ground.visible = false;
-    ground.bounciness = 0;
+
+    for (let i = 0; i <= 12; i++) {
+        walls[i] = new terrain.Sprite((i * 6) * height - width * 0.5, surfaceY * 0.5, 74, surfaceY);
+    }
+
+    walls[13] = new terrain.Sprite(0, 0, 74, 74);
 
     player = new Sprite(0, 300, 40, 40);
     player.color = "white";
