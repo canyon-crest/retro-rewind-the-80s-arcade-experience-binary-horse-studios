@@ -25,7 +25,7 @@ window.onresize();
 camera.zoom = 1;
 camera.x = 0;
 camera.y = height / 2;
-world.gravity.y = 15;
+world.gravity.y = 37;
 
 import { createProjectile } from './items.js';
 
@@ -68,14 +68,14 @@ let balls;
 
     walls[13] = new terrain.Sprite(0, 0, 74, 74);
 
-    player = new Sprite(0, 300, 40, 40);
+    player = new Sprite(0, 300, 100, 100);
     player.color = "white";
     player.rotationLock = true;
     player.friction = 0;
     player.bounciness = 0;
 
     balls = new Group();
-    balls.diameter = 30;
+    balls.diameter = 67;
     balls.color = '#e91e63';
     balls.bounciness = 0.9;
 
@@ -98,10 +98,10 @@ function computePlayerActions(pdata, player, kb) {
     };
 
     if (kb.pressing('left')) {
-        actions.moveX = -6;
+        actions.moveX = -10;
         actions.facingRight = false;
     } else if (kb.pressing('right')) {
-        actions.moveX = 6;
+        actions.moveX = 10; // CONSTANT
         actions.facingRight = true;
     } else {
         actions.moveX = 0;
@@ -157,6 +157,7 @@ q5.update = function () {
     else if (positionAlongCorridor > height * 6 - width) image(corridorBG, (9 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
 
     if (player.colliding(ground)) {
+        // CONSTANT
         pdata.groundedTimer = 4; // stay "grounded" for 4 frames after leaving a surface
     } else if (pdata.groundedTimer > 0) {
         pdata.groundedTimer--;
@@ -168,7 +169,7 @@ q5.update = function () {
     pdata.facingRight = actions.facingRight;
 
     if (actions.jump) {
-        player.vel.y = -10;
+        player.vel.y = -16; // CONSTANT
         pdata.groundedTimer = 0;
     }
 
@@ -235,10 +236,10 @@ function createAttack(type) {
 
     if (type === 'ground_punch') {
         a = Sprite.withSensor(
-            pdata.facingRight ? player.x + 40 : player.x - 40,
+            pdata.facingRight ? player.x + 80 : player.x - 80,
             player.y,
-            60,
-            30
+            100, // CONSTANT(s)
+            60
         );
         a.life = 15;
         a.strength = 2;
@@ -247,10 +248,10 @@ function createAttack(type) {
 
     else if (type === 'air_forward') {
         a = Sprite.withSensor(
-            pdata.facingRight ? player.x + 60 : player.x - 60,
+            player.x + (pdata.facingRight ? 100 : -100),
             player.y,
-            100,
-            20
+            120, // CONSTANT(s)
+            40
         );
         a.life = 8;
         a.strength = 1;
@@ -258,7 +259,7 @@ function createAttack(type) {
     }
 
     else if (type === 'air_explosion') {
-        a = Sprite.withSensor(player.x, player.y, 120);
+        a = Sprite.withSensor(player.x, player.y, 250); // CONSTANT(s)
         a.life = 25;
         a.strength = 3;
         a.color = 'red';
@@ -280,7 +281,7 @@ function createAttack(type) {
     bond.length = 0;
     bond.visible = false;
 
-    a.debug = false;
+    a.debug = true;
 }
 
 function handleHit(attack, ball) {
