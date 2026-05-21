@@ -21,16 +21,17 @@ window.onresize = function() {
 }
 window.onresize();
 
+allSprites.everyFrame = {};
+
 
 camera.zoom = 1;
 camera.x = 0;
 camera.y = height / 2;
 world.gravity.y = 37;
 
-import { createProjectile } from './items.js';
+import { createProjectile, handleProjectileHit } from './items.js';
 
 let pdata = {
-    facingRight: true,
     attackCooldown: 0,
     startupTimer: 0,
     pendingAttack: null,
@@ -51,9 +52,9 @@ let terrain;
 let ground;
 let walls = [];
 
-let balls;
-
 { // create environmental objects
+    window.worldAnchor = Sprite.withSensor(0, 0, 37, 37, "static");
+
     terrain = new Group();
     terrain.physics = "static";
     terrain.bounciness = 0; // BY DEFAULT
@@ -69,12 +70,13 @@ let balls;
     walls[13] = new terrain.Sprite(0, 0, 74, 74);
 
     player = new Sprite(0, 300, 100, 100);
+    player.facingRight = true;
     player.color = "white";
     player.rotationLock = true;
     player.friction = 0;
     player.bounciness = 0;
 
-    balls = new Group();
+    window.balls = new Group();
     balls.diameter = 67;
     balls.color = '#e91e63';
     balls.bounciness = 0.9;
@@ -85,12 +87,13 @@ let balls;
 }
 
 pdata.activeAttacks.overlaps(balls, handleHit);
+pdata.activeAttacks.overlaps(terrain, handleHit);
 player.passes(pdata.activeAttacks);
 
 function computePlayerActions(pdata, player, kb) {
     const actions = {
         moveX: 0,
-        facingRight: pdata.facingRight,
+        facingRight: player.facingRight,
         jump: false,
         attack: null,
         startup: false,
@@ -113,7 +116,7 @@ function computePlayerActions(pdata, player, kb) {
 
     if (kb.presses('space') && pdata.attackCooldown === 0 && pdata.startupTimer === 0) {
         let isGrounded = pdata.groundedTimer > 0;
-        let holdingForward = (pdata.facingRight && kb.pressing('right')) || (!pdata.facingRight && kb.pressing('left'));
+        let holdingForward = (player.facingRight && kb.pressing('right')) || (!player.facingRight && kb.pressing('left'));
 
         if (isGrounded) {
             actions.attack = 'ground_punch';
@@ -166,7 +169,7 @@ q5.update = function () {
     const actions = computePlayerActions(pdata, player, kb);
 
     player.vel.x = actions.moveX;
-    pdata.facingRight = actions.facingRight;
+    player.facingRight = actions.facingRight;
 
     if (actions.jump) {
         player.vel.y = -16; // CONSTANT
@@ -191,6 +194,25 @@ q5.update = function () {
     if (transitionResult.spawnAttack) {
         createAttack(transitionResult.spawnAttack);
         player.color = 'white';
+    }
+
+    for (let i = 0; i < allSprites.length; i++) {
+        const sprite = allSprites[i];
+        if (!sprite.everyFrame) {
+            throw "no everyFrame object";
+        }
+
+        const everyFrame = Object.entries(sprite.everyFrame);
+        
+        for (let j = 0; j < everyFrame.length; j++) {
+            everyFrame[j][1].f(sprite);
+            everyFrame[j][1].duration--;
+            if (everyFrame[j][1].duration <= 0) {
+                delete sprite.everyFrame[everyFrame[j][0]];
+                everyFrame.splice(j, 1);
+                j--;
+            }
+        }
     }
 }
 
@@ -242,37 +264,34 @@ function createAttack(type) {
             60
         );
         a.life = 15;
-        a.strength = 2;
-        a.color = 'orange';
     }
 
     else if (type === 'air_forward') {
         a = Sprite.withSensor(
-            player.x + (pdata.facingRight ? 100 : -100),
+            player.x + (player.facingRight ? 100 : -100),
             player.y,
             120, // CONSTANT(s)
             40
         );
         a.life = 8;
-        a.strength = 1;
-        a.color = 'cyan';
     }
 
     else if (type === 'air_explosion') {
         a = Sprite.withSensor(player.x, player.y, 250); // CONSTANT(s)
         a.life = 25;
-        a.strength = 3;
-        a.color = 'red';
     }
 
     else if (type === 'molotov_throw' || type === 'beer_throw' || type === 'bullet') {
         a = createProjectile(player, type);
         pdata.activeAttacks.add(a);
-        pdata.attackCooldown = a.life + 10;
+        pdata.attackCooldown = 6;
         return;
     }
 
     a.img = '\u{1f98c}';
+
+    a.type = type;
+    a.facingRight = player.facingRight;
 
     pdata.activeAttacks.add(a);
     pdata.attackCooldown = a.life + 10;
@@ -284,17 +303,24 @@ function createAttack(type) {
     a.debug = true;
 }
 
-function handleHit(attack, ball) {
-    // future: define direction
-    if (attack.strength === 1) { // WEAK
-        if (random() > 0.8) ball.delete();
-        else { ball.vel.x = attack.x < ball.x ? 15 : -15; ball.vel.y = -5; }
+function handleHit(attack, target) {
+    const isProjectile = attack.type === "molotov_throw" || attack.type === "beer_throw" || attack.type === "bullet";
+    const targetIsTerrain = terrain.includes(target);
+
+    if (isProjectile) {
+        handleProjectileHit(attack, target, targetIsTerrain);
     }
-    else if (attack.strength === 2) { // MEDIUM
-        if (random() > 0.4) ball.delete();
-        else { ball.vel.x = attack.x < ball.x ? 20 : -20; ball.vel.y = -10; }
-    }
-    else if (attack.strength === 3) { // STRONG
-        ball.delete();
+    else if (!targetIsTerrain) {
+        if (attack.type === "ground_punch") {
+            if (random() > 0.8) target.delete();
+            else { target.vel.x = attack.facingRight ? 15 : -15; target.vel.y = -5; }
+        }
+        else if (attack.type === "air_forward") {
+            if (random() > 0.4) target.delete();
+            else { target.vel.x = attack.facingRight ? 20 : -20; target.vel.y = -10; }
+        }
+        else if (attack.type === "air_explosion") {
+            target.delete();
+        }
     }
 }

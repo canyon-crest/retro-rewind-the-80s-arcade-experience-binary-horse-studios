@@ -3,30 +3,83 @@ export function createProjectile(sender, projectileType) {
     const startX = sender.x + dir * 30;
     const startY = sender.y - 8;
 
-    const proj = Sprite.withSensor(startX, startY, 20, 20);
+    const proj = Sprite.withSensor(startX, startY, 50);
+    proj.facingRight = dir > 0;
     proj.rotationLock = true;
     proj.friction = 0;
     proj.bounciness = 0;
     proj.gravity = true;
-    proj.vel.x = dir * (projectileType === 'bullet' ? 24 : 14);
-    proj.vel.y = projectileType === 'bullet' ? 0 : -3;
-    proj.life = projectileType === 'bullet' ? 40 : 70;
+    proj.life = 200; // effectively just a despawn threshold
     proj.type = projectileType;
 
+    proj.vel.x = sender.vel.x;
+    proj.vel.y = sender.vel.y * 0.4;
+
     if (projectileType === 'molotov_throw') {
-        proj.color = 'orange';
         proj.img = '🍾';
-        proj.strength = 3;
+        proj.vel.x += dir * 20 + Math.random() * 4;
+        proj.vel.y += -5 - Math.random();
     } else if (projectileType === 'beer_throw') {
-        proj.color = 'gold';
         proj.img = '🍺';
-        proj.strength = 1;
+        proj.vel.x += dir * 20 + Math.random() * 4;
+        proj.vel.y += -5 - Math.random();
     } else if (projectileType === 'bullet') {
-        proj.color = 'silver';
-        proj.img = '•';
-        proj.strength = 1;
+        proj.diameter = 20;
+        proj.img = '\u25aa\ufe0f';
+        proj.vel.x = dir * 50;
+        proj.vel.y = -2;
+
+        proj.everyFrame[Math.max(-1, ...Object.keys(proj.everyFrame)) + 1] = {duration: Infinity, f: function(self) {
+            self.bearing = 90;
+            self.applyForceScaled(world.gravity.y * -0.6);
+        }};
     }
 
-    proj.debug = false;
+    proj.debug = true;
     return proj;
+}
+
+export function handleProjectileHit(proj, target, targetIsTerrain) {
+    if (proj.type === "molotov_explosion") {
+        console.warn("well color me impressed");
+        return;
+    }
+
+    if (proj.type === "molotov_throw") {
+        proj.type = "molotov_explosion";
+        proj.img = "💥";
+        proj.diameter = 200;
+        proj.life = 20;
+
+        proj.vel.x = proj.vel.y = 0;
+        const bond = new GlueJoint(proj, worldAnchor);
+        bond.visible = false;
+
+        proj.everyFrame["overlaps"] = {duration: Infinity, f: function(explosion) {
+            for (const ball of balls) {
+                if (explosion.overlaps(ball)) {
+                    ball.everyFrame["antigravity"] = {duration: Infinity, f: function(self) {
+                        self.bearing = 90;
+                        self.applyForceScaled(world.gravity.y * -2);
+                    }};
+                }
+            }
+        }};
+        return;
+    }
+
+    if (targetIsTerrain) {
+        if (proj.type !== "molotov_explosion" && proj.type !== "molotov_throw") {
+            proj.delete();
+        }
+    }
+    else {
+        if (proj.type === "beer_throw") {
+            target.vel.x = proj.vel.x; target.vel.y = -20;
+            proj.delete();
+        }
+        else if (proj.type === "bullet") {
+            target.delete();
+        }
+    }
 }
