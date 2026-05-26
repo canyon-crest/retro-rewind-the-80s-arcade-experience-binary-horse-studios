@@ -31,6 +31,101 @@ camera.y = height / 2;
 world.gravity.y = 37;
 
 import { createProjectile, handleProjectileHit } from "./items.js";
+// Spritesheet registry: maps sheet names to loaded images and metadata
+const spritesheets = {
+    usIdle: {
+        image: await loadImage("./idle.png"),
+        frameWidth: 30,
+        frameHeight: 73,
+    },
+    usRun: {
+        image: await loadImage("./run.png"),
+        frameWidth: 37,
+        frameHeight: 70,
+    },
+    usFire: {
+        image: await loadImage("./fire.png"),
+        frameWidth: 50,
+        frameHeight: 73,
+    }
+};
+
+// TODO: Load spritesheet images
+// Example: spritesheets.player.image = await loadImage(\"path/to/player.png\");
+// Animation sequences: [spritesheet]/[position] blocks
+const animationSequences = {
+    "player.idle": {
+        blocks: [
+            { sheet: "usIdle", framePos: { x: 0, y: 0 }, duration: 10 },
+            { sheet: "usIdle", framePos: { x: 1, y: 0 }, duration: 10 }
+        ],
+        loop: true
+    },
+
+    "player.run": {
+        blocks: [
+            { sheet: "usRun", framePos: { x: 2, y: 0 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 1, y: 1 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 2, y: 1 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 0, y: 1 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 0, y: 0 }, duration: 5 }
+        ],
+        loop: true
+    },
+    
+    /*// Ground punch: immediate attack
+    "player.ground_punch.startup": {
+        blocks: [
+            { sheet: "player", framePos: { x: 1, y: 0 }, duration: 5 }
+        ],
+        loop: false,
+        onComplete: "spawn_ground_punch"
+    },
+    
+    // Air forward punch: immediate attack
+    "player.air_forward.startup": {
+        blocks: [
+            { sheet: "player", framePos: { x: 2, y: 0 }, duration: 5 }
+        ],
+        loop: false,
+        onComplete: "spawn_air_forward"
+    },
+    
+    // Air explosion: has startup phase
+    "player.air_explosion.startup": {
+        blocks: [
+            { sheet: "player", framePos: { x: 3, y: 0 }, duration: 8 },
+            { sheet: "player", framePos: { x: 4, y: 0 }, duration: 7 }
+        ],
+        loop: false,
+        onComplete: "spawn_air_explosion"
+    },
+    
+    // Projectile animations
+    "player.molotov_throw.startup": {
+        blocks: [
+            { sheet: "player", framePos: { x: 5, y: 0 }, duration: 5 }
+        ],
+        loop: false,
+        onComplete: "spawn_molotov_throw"
+    },
+    "player.beer_throw.startup": {
+        blocks: [
+            { sheet: "player", framePos: { x: 6, y: 0 }, duration: 5 }
+        ],
+        loop: false,
+        onComplete: "spawn_beer_throw"
+    },*/
+    "player.bullet.startup": {
+        blocks: [
+            { sheet: "usFire", framePos: { x: 0, y: 2 }, duration: 2 },
+            { sheet: "usFire", framePos: { x: 2, y: 0 }, duration: 2 },
+            { sheet: "usFire", framePos: { x: 0, y: 2 }, duration: 2 }
+        ],
+        loop: false,
+        onComplete: "spawn_bullet"
+    }
+};
 
 let pdata = {
     attackCooldown: 0,
@@ -40,6 +135,16 @@ let pdata = {
 
     activeAttacks: new Group(),
     attackAnimation: null,
+
+    // Animation system state
+    activeAnimation: null,      // Current animation name (string)
+    animationFrame: 0,          // Index in current sequence (0-based)
+    animationTimer: 0,          // Countdown frames until next block
+    animationLooping: false,    // Whether animation loops
+    
+    // Movement animation state
+    currentMovementAnim: null,  // "idle" or "run" or null
+    lastMoveX: 0,               // Track previous movement for state changes
 
     inventory: []
 };
@@ -95,6 +200,10 @@ let doors = [];
 pdata.activeAttacks.overlaps(balls, handleHit);
 pdata.activeAttacks.overlaps(terrain, handleHit);
 player.passes(pdata.activeAttacks);
+
+// Initialize with idle animation
+startAnimation("player.idle", true);
+pdata.currentMovementAnim = "idle";
 
 function computePlayerActions(pdata, player, kb) {
     const actions = {
@@ -158,6 +267,127 @@ function attackImageFor(type) {
     }[type] || "\u{1f98a}";
 }
 
+// Start playing an animation sequence
+function startAnimation(name, loop = true) {
+    if (!animationSequences[name]) {
+        console.warn(`Animation "${name}" not found`);
+        return;
+    }
+    pdata.activeAnimation = name;
+    pdata.animationFrame = 0;
+    pdata.animationLooping = loop;
+    
+    const sequence = animationSequences[name];
+    if (sequence.blocks.length > 0) {
+        pdata.animationTimer = sequence.blocks[0].duration;
+    }
+}
+
+// Update animation state each frame (call once per frame in q5.update)
+function updateAnimation() {
+    if (!pdata.activeAnimation) return;
+    
+    const sequence = animationSequences[pdata.activeAnimation];
+    if (!sequence || sequence.blocks.length === 0) return;
+    
+    pdata.animationTimer--;
+    
+    if (pdata.animationTimer <= 0) {
+        pdata.animationFrame++;
+        
+        if (pdata.animationFrame >= sequence.blocks.length) {
+            if (pdata.animationLooping) {
+                pdata.animationFrame = 0;
+                pdata.animationTimer = sequence.blocks[0].duration;
+            } else {
+                // Animation finished, stay on last frame or clear
+                pdata.activeAnimation = null;
+                pdata.animationFrame = 0;
+                return;
+            }
+        } else {
+            pdata.animationTimer = sequence.blocks[pdata.animationFrame].duration;
+        }
+    }
+}
+
+// Render the current animation frame to the player sprite
+// Extract a single frame from a spritesheet as a data URI
+function extractFrameAsDataURI(sheetImage, srcX, srcY, frameWidth, frameHeight) {
+    // Create offscreen canvas at frame dimensions
+    const canvas = document.createElement('canvas');
+    canvas.width = frameWidth;
+    canvas.height = frameHeight;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    
+    // Draw the cropped region from spritesheet to canvas
+    try {
+        ctx.drawImage(
+            sheetImage,
+            srcX, srcY,                    // Source position
+            frameWidth, frameHeight,       // Source dimensions
+            0, 0,                          // Dest position
+            frameWidth, frameHeight        // Dest dimensions
+        );
+    } catch (e) {
+        console.warn("Failed to extract frame:", e);
+        return null;
+    }
+    
+    // Convert canvas to data URI
+    return canvas.toDataURL();
+}
+
+function renderCurrentFrame() {
+    if (!pdata.activeAnimation) return;
+    
+    const sequence = animationSequences[pdata.activeAnimation];
+    if (!sequence || sequence.blocks.length === 0) return;
+    
+    const block = sequence.blocks[pdata.animationFrame];
+    
+    // Get spritesheet
+    const sheetKey = block.sheet;
+    const sheet = spritesheets[sheetKey];
+    
+    if (!sheet || !sheet.image) {
+        // Fallback: use placeholder emoji if spritesheet not loaded
+        player.img = "\u{1f98a}";
+        return;
+    }
+    
+    // Extract frame from spritesheet
+    // framePos can be: {x, y} pixel coords or {col, row} grid indices
+    const framePos = block.framePos;
+    
+    // Determine pixel coordinates
+    let srcX = framePos.x;
+    let srcY = framePos.y;
+    
+    // If framePos values are small integers (likely grid indices), convert to pixel coords
+    if (framePos.x < 20 && framePos.y < 20) {
+        srcX = framePos.x * sheet.frameWidth;
+        srcY = framePos.y * sheet.frameHeight;
+    }
+    
+    // Extract frame as a canvas-based crop and convert to data URI
+    const frameDataURI = extractFrameAsDataURI(
+        sheet.image,
+        srcX, srcY,
+        sheet.frameWidth,
+        sheet.frameHeight
+    );
+    
+    if (frameDataURI) {
+        player.img = frameDataURI;
+    } else {
+        // Fallback if cropping failed
+        player.img = "\u{1f98a}";
+    }
+}
+
 q5.update = function () {
     const positionAlongCorridor = camera.x % (height * 6);
 
@@ -184,10 +414,20 @@ q5.update = function () {
 
     camera.x += (player.x - camera.x) * 0.67;
 
-    if (pdata.attackAnimation) {
-        player.img = pdata.attackAnimation;
-    } else {
-        player.img = "\u{1f98a}";
+    // Movement animation control: switch between idle and run based on player velocity
+    // Only update movement animation if no attack animation is active
+    if (!pdata.activeAnimation || pdata.activeAnimation.startsWith("player.idle") || pdata.activeAnimation.startsWith("player.run")) {
+        const isMoving = Math.abs(actions.moveX) > 0;
+        
+        if (isMoving && pdata.currentMovementAnim !== "run") {
+            // Start run animation
+            startAnimation("player.run", true);
+            pdata.currentMovementAnim = "run";
+        } else if (!isMoving && pdata.currentMovementAnim !== "idle") {
+            // Start idle animation
+            startAnimation("player.idle", true);
+            pdata.currentMovementAnim = "idle";
+        }
     }
 
     const transitionResult = computeStateTransitions(pdata, actions);
@@ -200,6 +440,19 @@ q5.update = function () {
     if (transitionResult.spawnAttack) {
         createAttack(transitionResult.spawnAttack);
         player.color = "white";
+    }
+
+    // Update and render active animation
+    updateAnimation();
+    renderCurrentFrame();
+
+    // Fallback to attack animation or idle if no active animation
+    if (!pdata.activeAnimation) {
+        if (pdata.attackAnimation) {
+            player.img = pdata.attackAnimation;
+        } else {
+            player.img = "\u{1f98a}";
+        }
     }
 
     for (let i = 0; i < allSprites.length; i++) {
@@ -234,26 +487,27 @@ function computeStateTransitions(pdata, actions) {
     }
 
     if (actions.attack) {
-        result.spawnAttack = actions.attack;
-        pdata.attackAnimation = attackImageFor(actions.attack);
-        return result;
-    }
-
-    if (actions.startup) {
-        pdata.startupTimer = 15; // CONSTANT
-        pdata.pendingAttack = actions.pendingAttack;
-        pdata.attackAnimation = attackImageFor(actions.pendingAttack);
+        // Start animation for immediate attack
+        const animName = `player.${actions.attack}.startup`;
+        startAnimation(animName, false);
+        pdata.pendingAttack = actions.attack;
         result.startupStarted = true;
         return result;
     }
 
-    // process startup frames
-    if (pdata.startupTimer > 0) {
-        pdata.startupTimer--;
-        if (pdata.startupTimer === 0) {
-            result.spawnAttack = pdata.pendingAttack;
-            pdata.pendingAttack = null;
-        }
+    if (actions.startup) {
+        // Start animation for startup attack
+        const animName = `player.${actions.pendingAttack}.startup`;
+        startAnimation(animName, false);
+        pdata.pendingAttack = actions.pendingAttack;
+        result.startupStarted = true;
+        return result;
+    }
+
+    // Detect when animation completes and spawn attack
+    if (pdata.pendingAttack && !pdata.activeAnimation && pdata.attackCooldown === 0) {
+        result.spawnAttack = pdata.pendingAttack;
+        pdata.pendingAttack = null;
     }
 
     return result;
