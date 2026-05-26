@@ -39,7 +39,10 @@ export function createProjectile(sender, projectileType) {
     return proj;
 }
 
-export function handleProjectileHit(proj, target, targetIsTerrain) {
+export function handleProjectileHit(proj, target, hittables) {
+    const targetIsHittable = hittables.includes(target);
+    const targetHasHP = target.hasOwnProperty("hp");
+
     if (proj.type === "molotov_explosion") {
         console.warn("well color me impressed");
         return;
@@ -55,20 +58,33 @@ export function handleProjectileHit(proj, target, targetIsTerrain) {
         const bond = new GlueJoint(proj, worldAnchor);
         bond.visible = false;
 
+        proj.explosionID = `${frameCount} + ${Math.floor(Math.random() * 1000)}`; // future: better explosion ID system
+
         proj.everyFrame["overlaps"] = {duration: Infinity, f: function(explosion) {
-            for (const ball of balls) {
-                if (explosion.overlaps(ball)) {
-                    ball.everyFrame["antigravity"] = {duration: Infinity, f: function(self) {
+            for (const h of hittables) { // future: probably irrelevant but could update to check for new hittables?
+                if (explosion.overlaps(h) && !h.everyFrame["antigravity-" + proj.explosionID]) { // future: better "already-hit detection"
+                    h.color = color([Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5]);
+
+                    h.everyFrame["antigravity-" + proj.explosionID] = {duration: Infinity, f: function(self) {
                         self.bearing = 90;
                         self.applyForceScaled(world.gravity.y * -2);
                     }};
+
+                    if (h.hasOwnProperty("hp")) {
+                        h.hp -= 42;
+
+                        if (h.hp < 0) {
+                            // future: death animation
+                            h.delete();
+                        }
+                    }
                 }
             }
         }};
         return;
     }
 
-    if (targetIsTerrain) {
+    if (!targetIsHittable) {
         if (proj.type !== "molotov_explosion" && proj.type !== "molotov_throw") {
             proj.delete();
         }
@@ -76,10 +92,14 @@ export function handleProjectileHit(proj, target, targetIsTerrain) {
     else {
         if (proj.type === "beer_throw") {
             target.vel.x = proj.vel.x; target.vel.y = -20;
+            if (targetHasHP) target.hp -= 15;
             proj.delete();
         }
         else if (proj.type === "bullet") {
-            target.delete();
+            if (targetHasHP) target.hp -= 25;
+            if (terrain.includes(target)/* && !(targetHasHP && target.hp < 0)*/) {
+                proj.delete();
+            }
         }
     }
 }

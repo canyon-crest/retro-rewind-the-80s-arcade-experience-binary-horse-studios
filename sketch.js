@@ -22,6 +22,7 @@ window.onresize = function() {
 window.onresize();
 
 allSprites.everyFrame = {};
+allSprites.autoCull = false;
 
 
 camera.zoom = 1;
@@ -29,7 +30,7 @@ camera.x = 0;
 camera.y = height / 2;
 world.gravity.y = 37;
 
-import { createProjectile, handleProjectileHit } from './items.js';
+import { createProjectile, handleProjectileHit } from "./items.js";
 
 let pdata = {
     attackCooldown: 0,
@@ -48,26 +49,30 @@ const corridorBG = await loadImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg
 
 let player;
 
-let terrain;
 let ground;
 let walls = [];
+let doors = [];
 
 { // create environmental objects
     window.worldAnchor = Sprite.withSensor(0, 0, 37, 37, "static");
 
-    terrain = new Group();
+    window.terrain = new Group();
     terrain.physics = "static";
     terrain.bounciness = 0; // BY DEFAULT
 
     const surfaceY = 700;
-    ground = new terrain.Sprite(0, surfaceY + 37, 80000, 74);
+    const doorHeight = 200;
+
+    ground = new terrain.Sprite(37000, surfaceY + 37, 80000, 74);
     ground.visible = false;
 
     for (let i = 0; i <= 12; i++) {
-        walls[i] = new terrain.Sprite((i * 6) * height - width * 0.5, surfaceY * 0.5, 74, surfaceY);
-    }
+        walls[i] = new terrain.Sprite((i * 6) * height - width * 0.5, (surfaceY - doorHeight) * 0.5, 74, surfaceY - doorHeight);
+        doors[i] = new terrain.Sprite((i * 6) * height - width * 0.5, surfaceY - doorHeight * 0.5, 67, doorHeight);
+        doors[i].color = "#bababa";
 
-    walls[13] = new terrain.Sprite(0, 0, 74, 74);
+        doors[i].hp = 67;
+    }
 
     player = new Sprite(0, 300, 100, 100);
     player.facingRight = true;
@@ -78,8 +83,9 @@ let walls = [];
 
     window.balls = new Group();
     balls.diameter = 67;
-    balls.color = '#e91e63';
+    balls.color = "#e91e63";
     balls.bounciness = 0.9;
+    balls.hp = 67;
 
     for (let i = 0; i < 15; i++) {
         new balls.Sprite(random(100, 700), random(50, 400));
@@ -100,42 +106,42 @@ function computePlayerActions(pdata, player, kb) {
         pendingAttack: null
     };
 
-    if (kb.pressing('left')) {
+    if (kb.pressing("left")) {
         actions.moveX = -10;
         actions.facingRight = false;
-    } else if (kb.pressing('right')) {
+    } else if (kb.pressing("right")) {
         actions.moveX = 10; // CONSTANT
         actions.facingRight = true;
     } else {
         actions.moveX = 0;
     }
 
-    if (kb.presses('up') && pdata.groundedTimer > 0) {
+    if (kb.presses("up") && pdata.groundedTimer > 0) {
         actions.jump = true;
     }
 
-    if (kb.presses('space') && pdata.attackCooldown === 0 && pdata.startupTimer === 0) {
+    if (kb.presses("space") && pdata.attackCooldown === 0 && pdata.startupTimer === 0) {
         let isGrounded = pdata.groundedTimer > 0;
-        let holdingForward = (player.facingRight && kb.pressing('right')) || (!player.facingRight && kb.pressing('left'));
+        let holdingForward = (player.facingRight && kb.pressing("right")) || (!player.facingRight && kb.pressing("left"));
 
         if (isGrounded) {
-            actions.attack = 'ground_punch';
+            actions.attack = "ground_punch";
         } else if (holdingForward) {
-            actions.attack = 'air_forward';
+            actions.attack = "air_forward";
         } else {
             actions.startup = true;
-            actions.pendingAttack = 'air_explosion';
+            actions.pendingAttack = "air_explosion";
         }
     }
 
-    if (kb.presses('z') && pdata.attackCooldown === 0) {
-        actions.attack = 'molotov_throw';
+    if (kb.presses("z") && pdata.attackCooldown === 0) {
+        actions.attack = "molotov_throw";
     }
-    if (kb.presses('x') && pdata.attackCooldown === 0) {
-        actions.attack = 'beer_throw';
+    if (kb.presses("x") && pdata.attackCooldown === 0) {
+        actions.attack = "beer_throw";
     }
-    if (kb.presses('c') && pdata.attackCooldown === 0) {
-        actions.attack = 'bullet';
+    if (kb.presses("c") && pdata.attackCooldown === 0) {
+        actions.attack = "bullet";
     }
 
     return actions;
@@ -143,13 +149,13 @@ function computePlayerActions(pdata, player, kb) {
 
 function attackImageFor(type) {
     return {
-        ground_punch: '🥊',
-        air_forward: '👊',
-        air_explosion: '💥',
-        molotov_throw: '🍾',
-        beer_throw: '🍺',
-        bullet: '🔫'
-    }[type] || '\u{1f98a}';
+        ground_punch: "🥊",
+        air_forward: "👊",
+        air_explosion: "💥",
+        molotov_throw: "🍾",
+        beer_throw: "🍺",
+        bullet: "🔫"
+    }[type] || "\u{1f98a}";
 }
 
 q5.update = function () {
@@ -161,7 +167,7 @@ q5.update = function () {
 
     if (player.colliding(ground)) {
         // CONSTANT
-        pdata.groundedTimer = 4; // stay "grounded" for 4 frames after leaving a surface
+        pdata.groundedTimer = 3; // stay "grounded" for 4 frames after leaving a surface
     } else if (pdata.groundedTimer > 0) {
         pdata.groundedTimer--;
     }
@@ -181,19 +187,19 @@ q5.update = function () {
     if (pdata.attackAnimation) {
         player.img = pdata.attackAnimation;
     } else {
-        player.img = '\u{1f98a}';
+        player.img = "\u{1f98a}";
     }
 
     const transitionResult = computeStateTransitions(pdata, actions);
 
     // apply side-effects from transitions
     if (transitionResult.startupStarted) {
-        player.color = 'pink';
+        player.color = "pink";
     }
 
     if (transitionResult.spawnAttack) {
         createAttack(transitionResult.spawnAttack);
-        player.color = 'white';
+        player.color = "white";
     }
 
     for (let i = 0; i < allSprites.length; i++) {
@@ -256,7 +262,7 @@ function computeStateTransitions(pdata, actions) {
 function createAttack(type) {
     let a;
 
-    if (type === 'ground_punch') {
+    if (type === "ground_punch") {
         a = Sprite.withSensor(
             pdata.facingRight ? player.x + 80 : player.x - 80,
             player.y,
@@ -266,7 +272,7 @@ function createAttack(type) {
         a.life = 15;
     }
 
-    else if (type === 'air_forward') {
+    else if (type === "air_forward") {
         a = Sprite.withSensor(
             player.x + (player.facingRight ? 100 : -100),
             player.y,
@@ -276,19 +282,19 @@ function createAttack(type) {
         a.life = 8;
     }
 
-    else if (type === 'air_explosion') {
+    else if (type === "air_explosion") {
         a = Sprite.withSensor(player.x, player.y, 250); // CONSTANT(s)
         a.life = 25;
     }
 
-    else if (type === 'molotov_throw' || type === 'beer_throw' || type === 'bullet') {
+    else if (type === "molotov_throw" || type === "beer_throw" || type === "bullet") {
         a = createProjectile(player, type);
         pdata.activeAttacks.add(a);
         pdata.attackCooldown = 6;
         return;
     }
 
-    a.img = '\u{1f98c}';
+    a.img = "\u{1f98c}";
 
     a.type = type;
     a.facingRight = player.facingRight;
@@ -305,22 +311,36 @@ function createAttack(type) {
 
 function handleHit(attack, target) {
     const isProjectile = attack.type === "molotov_throw" || attack.type === "beer_throw" || attack.type === "bullet";
-    const targetIsTerrain = terrain.includes(target);
+
+    const hittables = [...balls, ...doors];
+    const targetIsHittable = hittables.includes(target);
+
+    const targetHasHP = target.hasOwnProperty("hp");
 
     if (isProjectile) {
-        handleProjectileHit(attack, target, targetIsTerrain);
+        handleProjectileHit(attack, target, hittables);
     }
-    else if (!targetIsTerrain) {
+    else if (targetIsHittable) {
         if (attack.type === "ground_punch") {
-            if (random() > 0.8) target.delete();
-            else { target.vel.x = attack.facingRight ? 15 : -15; target.vel.y = -5; }
+            target.vel.x = attack.facingRight ? 15 : -15; target.vel.y = -5;
+            target.hp -= 20;
         }
         else if (attack.type === "air_forward") {
-            if (random() > 0.4) target.delete();
-            else { target.vel.x = attack.facingRight ? 20 : -20; target.vel.y = -10; }
+            target.vel.x = attack.facingRight ? 20 : -20; target.vel.y = -10;
+            target.hp -= 18;
         }
         else if (attack.type === "air_explosion") {
-            target.delete();
+            let angle = atan2(target.y - attack.y, target.x - attack.x);
+            target.vel.x = 25 * cos(angle);
+            target.vel.y = 25 * sin(angle) ** 2;
+
+            target.hp -= 37;
         }
+    }
+
+    if (targetHasHP && target.hp < 0) {
+        // future: death animation
+        // future: can die twice?
+        target.delete();
     }
 }
