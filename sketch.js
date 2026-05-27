@@ -21,6 +21,13 @@ window.onresize = function() {
 }
 window.onresize();
 
+window.GAMESTATE = {
+    key: false,
+    timer: 300,
+    score: 0,
+    ammo: {molotov: 0, beer: 0, bullet: 0}
+};
+
 allSprites.everyFrame = {};
 allSprites.autoCull = false;
 
@@ -66,13 +73,31 @@ let doors = [];
     ground = new terrain.Sprite(37000, surfaceY + 37, 80000, 74);
     ground.visible = false;
 
-    for (let i = 0; i <= 12; i++) {
-        walls[i] = new terrain.Sprite((i * 6) * height - width * 0.5, (surfaceY - doorHeight) * 0.5, 74, surfaceY - doorHeight);
-        doors[i] = new terrain.Sprite((i * 6) * height - width * 0.5, surfaceY - doorHeight * 0.5, 67, doorHeight);
-        doors[i].color = "#bababa";
+	window.crates = new Group(terrain);
+	crates.physics = "dynamic";
+	crates.width = 100;
+	crates.height = 100;
+	crates.img = await loadImage("./crate.png");
+	crates.img.resize(200, 200);
+	crates.hp = 67;
 
-        doors[i].hp = 67;
+	walls[0] = new terrain.Sprite(width * -0.5, surfaceY * 0.5, 74, surfaceY);
+
+
+    for (let number = 0; number < 8; number++) {
+		const i = number + 1;
+
+		const rightEdge = (i * 6) * height - width * 0.5;
+		
+        walls[i] = new terrain.Sprite(rightEdge, (surfaceY - doorHeight) * 0.5, 74, surfaceY - doorHeight);
+        doors[number] = new terrain.Sprite(rightEdge, surfaceY - doorHeight * 0.5, 67, doorHeight);
+        doors[number].color = "#bababa";
+
+		for (let j = 0; j < 5; j++) {
+			new crates.Sprite(random(rightEdge - 6 * height + 500, rightEdge - 500), random(0, surfaceY * 0.5));
+		}
     }
+
 
     player = new Sprite(0, 300, 100, 100);
     player.facingRight = true;
@@ -165,7 +190,7 @@ q5.update = function () {
     if (positionAlongCorridor < 0) image(corridorBG, (-3 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
     else if (positionAlongCorridor > height * 6 - width) image(corridorBG, (9 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
 
-    if (player.colliding(ground)) {
+    if (player.colliding(terrain)) {
         // CONSTANT
         pdata.groundedTimer = 3; // stay "grounded" for 4 frames after leaving a surface
     } else if (pdata.groundedTimer > 0) {
@@ -264,7 +289,7 @@ function createAttack(type) {
 
     if (type === "ground_punch") {
         a = Sprite.withSensor(
-            pdata.facingRight ? player.x + 80 : player.x - 80,
+            player.facingRight ? player.x + 80 : player.x - 80,
             player.y,
             100, // CONSTANT(s)
             60
@@ -312,7 +337,7 @@ function createAttack(type) {
 function handleHit(attack, target) {
     const isProjectile = attack.type === "molotov_throw" || attack.type === "beer_throw" || attack.type === "bullet";
 
-    const hittables = [...balls, ...doors];
+    const hittables = [...balls, ...crates];
     const targetIsHittable = hittables.includes(target);
 
     const targetHasHP = target.hasOwnProperty("hp");
