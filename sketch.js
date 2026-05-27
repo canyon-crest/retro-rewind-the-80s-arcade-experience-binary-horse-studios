@@ -9,49 +9,46 @@ function loadPNG(src) {
     });
 }
 
-await Canvas(1600, 900);
+await Canvas(window.innerWidth, window.innerHeight);
 noSmooth();
 
 canvas.style.position = "fixed";
+canvas.style.left = "0";
+canvas.style.top = "0";
+canvas.style.width = "100vw";
+canvas.style.height = "100vh";
 
 window.onresize = function() {
-    if (window.innerHeight / window.innerWidth > height / width) {
-        canvas.style.width = "100%";
-        canvas.style.height = `${(height / width) * window.innerWidth}px`;
-        canvas.style.left = "0";
-        canvas.style.top = `${(window.innerHeight - (height / width) * window.innerWidth) * 0.5}px`;
-    }
-    else {
-        canvas.style.width = `${(width / height) * window.innerHeight}px`;
-        canvas.style.height = "100%";
-        canvas.style.left = `${(window.innerWidth - (width / height) * window.innerHeight) * 0.5}px`;
-        canvas.style.top = "0";
-    }
-}
+    resizeCanvas(window.innerWidth, window.innerHeight);
+    camera.x = width / 2;
+    camera.y = height / 2;
+};
 window.onresize();
 
 allSprites.everyFrame = {};
 allSprites.autoCull = false;
 
 camera.zoom = 1;
-camera.x = 0;
+camera.x = width / 2;
 camera.y = height / 2;
 world.gravity.y = 37;
 
 import { createProjectile, handleProjectileHit } from "./items.js";
+import {
+    initStartScreen,
+    updateStartScreen,
+    handleStartScreenClick,
+    isStartScreenDone,
+} from "./startscreen.js";
+import { GameOverScreen } from "./deathscreen.js";
 
 // ============================================================
 // Animator
 // ============================================================
 function createAnimator(sprite, frames, sequences) {
     const state = {
-        baseName: null,
-        baseFrame: 0,
-        baseTimer: 0,
-        oneShotName: null,
-        oneShotFrame: 0,
-        oneShotTimer: 0,
-        oneShotOnComplete: null,
+        baseName: null, baseFrame: 0, baseTimer: 0,
+        oneShotName: null, oneShotFrame: 0, oneShotTimer: 0, oneShotOnComplete: null,
     };
 
     function primeTimer(name) { return sequences[name].blocks[0].duration; }
@@ -109,7 +106,6 @@ function createAnimator(sprite, frames, sequences) {
     function render() {
         const activeName = state.oneShotName || state.baseName;
         const activeFrame = state.oneShotName ? state.oneShotFrame : state.baseFrame;
-
         if (!activeName) { sprite.img = "\u{1f98a}"; return; }
         const list = frames[activeName];
         if (!list || list.length === 0) { sprite.img = "\u{1f98a}"; return; }
@@ -127,17 +123,14 @@ async function extractFrameAsImage(sheetImage, srcX, srcY, frameWidth, frameHeig
     const c = document.createElement("canvas");
     c.width = frameWidth;
     c.height = frameHeight;
-
     const ctx = c.getContext("2d");
     if (!ctx) return null;
-
     try {
         ctx.drawImage(sheetImage, srcX, srcY, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
     } catch (e) {
         console.warn("Failed to extract frame:", e);
         return null;
     }
-
     const img = await loadImage(c.toDataURL());
     img.resize(frameWidth * 20/3, frameHeight * 20/3);
     return img;
@@ -180,13 +173,18 @@ const animationSequences = {
         { sheet: "usRun", framePos: { x: 0, y: 1 }, duration: 6 },
         { sheet: "usRun", framePos: { x: 0, y: 0 }, duration: 10 },
     ]},
-  
+    "player.ground_punch.startup":  { blocks: [{ sheet: "usRun",  framePos: {x:1,y:0}, duration: 5 }] },
+    "player.air_forward.startup":   { blocks: [{ sheet: "usRun",  framePos: {x:2,y:0}, duration: 5 }] },
+    "player.air_explosion.startup": { blocks: [
+        { sheet: "usFire", framePos: {x:3,y:0}, duration: 8 },
+        { sheet: "usFire", framePos: {x:4,y:0}, duration: 7 },
+    ]},
     "player.molotov_throw.startup": { blocks: [
         { sheet: "usRun", framePos: {x:1,y:0}, duration: 2 },
         { sheet: "usRun", framePos: {x:2,y:0}, duration: 5 },
         { sheet: "usRun", framePos: {x:1,y:1}, duration: 5 },
     ]},
-    "player.beer_throw.startup":    { blocks: [
+    "player.beer_throw.startup": { blocks: [
         { sheet: "usRun", framePos: {x:1,y:0}, duration: 2 },
         { sheet: "usRun", framePos: {x:2,y:0}, duration: 5 },
         { sheet: "usRun", framePos: {x:1,y:1}, duration: 5 },
@@ -227,8 +225,6 @@ let doors = [];
         walls[i] = new terrain.Sprite((i * 6) * height - width * 0.5, (surfaceY - doorHeight) * 0.5, 74, surfaceY - doorHeight);
         doors[i] = new terrain.Sprite((i * 6) * height - width * 0.5, surfaceY - doorHeight * 0.5, 67, doorHeight);
         doors[i].color = "#bababa";
-
-        doors[i].hp = 67;
     }
 
     player = new Sprite(0, 300, 100, 180);
@@ -259,6 +255,7 @@ let pdata = {
     pendingAttack: null,
     inventory: [],
     airborne: false,
+    hp: 100,
 };
 
 const anim = createAnimator(player, animationFrames, animationSequences);
@@ -269,39 +266,108 @@ pdata.activeAttacks.overlaps(terrain, handleHit);
 player.passes(pdata.activeAttacks);
 
 // ============================================================
+// Screen state machine
+// ============================================================
+let gameState = "startscreen"; // "startscreen" | "playing" | "gameover"
+
+initStartScreen();
+let gameOverScreen = null;
+let stashedSprites = [];
+
+function setWorldVisible(visible) {
+    console.log("setWorldVisible:", visible);
+    
+    if (!visible) {
+        // Move everything far away so it doesn't render
+        for (const s of allSprites) {
+            stashedSprites.push({
+                sprite: s,
+                x: s.x,
+                y: s.y,
+                vx: s.vel ? s.vel.x : 0,
+                vy: s.vel ? s.vel.y : 0,
+            });
+            s.x = -999999;
+            s.y = -999999;
+            if (s.vel) { s.vel.x = 0; s.vel.y = 0; }
+            s.visible = false;
+        }
+    } else {
+        // Restore everything
+        for (const stash of stashedSprites) {
+            stash.sprite.x = stash.x;
+            stash.sprite.y = stash.y;
+            if (stash.sprite.vel) {
+                stash.sprite.vel.x = stash.vx;
+                stash.sprite.vel.y = stash.vy;
+            }
+            stash.sprite.visible = true;
+        }
+        stashedSprites = [];
+        // Also clear active attacks if any
+        for (const a of [...pdata.activeAttacks]) a.delete();
+    }
+}
+setWorldVisible(false); // start hidden during the title screen
+
+// p5/q5 dispatches mouse clicks to a global mousePressed function
+window.mousePressed = function() {
+    if (gameState === "startscreen") {
+        handleStartScreenClick(mouseX, mouseY);
+    }
+};
+
+function resetGameplayPositions() {
+    // Player back to spawn
+    player.x = 0;
+    player.y = 300;
+    player.vel.x = 0;
+    player.vel.y = 0;
+    
+    // Balls back into the level
+    let i = 0;
+    for (const b of balls) {
+        b.x = 100 + (i * 50) % 600;
+        b.y = 50 + Math.floor((i * 50) / 600) * 80;
+        b.vel.x = 0;
+        b.vel.y = 0;
+        i++;
+    }
+    
+    // Camera back to start
+    camera.x = width / 2;
+}
+function restartGame() {
+    setWorldVisible(true);
+    resetGameplayPositions();
+    
+    player.facingRight = true;
+    pdata.hp = 100;
+    pdata.attackCooldown = 0;
+    pdata.pendingAttack = null;
+    pdata.groundedTimer = 0;
+    pdata.airborne = false;
+
+    for (const a of [...pdata.activeAttacks]) a.delete();
+    anim.playBase("player.idle");
+}
+// ============================================================
 // Input -> intended actions
 // ============================================================
 function computePlayerActions(pdata, player, kb) {
-    const actions = {
-        moveX: 0,
-        facingRight: player.facingRight,
-        jump: false,
-        attack: null,
-    };
+    const actions = { moveX: 0, facingRight: player.facingRight, jump: false, attack: null };
 
-    if (kb.pressing("left")) {
-        actions.moveX = -10;
-        actions.facingRight = false;
-    } else if (kb.pressing("right")) {
-        actions.moveX = 10;
-        actions.facingRight = true;
-    }
+    if (kb.pressing("left"))       { actions.moveX = -10; actions.facingRight = false; }
+    else if (kb.pressing("right")) { actions.moveX =  10; actions.facingRight = true;  }
 
-    if (kb.presses("up") && pdata.groundedTimer > 0) {
-        actions.jump = true;
-    }
+    if (kb.presses("up") && pdata.groundedTimer > 0) actions.jump = true;
 
     if (kb.presses("space") && pdata.attackCooldown === 0) {
         const isGrounded = pdata.groundedTimer > 0;
         const holdingForward = (player.facingRight && kb.pressing("right")) || (!player.facingRight && kb.pressing("left"));
-
-        if (isGrounded) {
-            actions.attack = "ground_punch";
-        } else if (holdingForward) {
-            actions.attack = "air_forward";
-        } else {
-            actions.attack = "air_explosion";
-        }
+        if (isGrounded)        actions.attack = "ground_punch";
+        else if (holdingForward) actions.attack = "air_forward";
+        else                     actions.attack = "air_explosion";
     }
 
     if (kb.presses("z") && pdata.attackCooldown === 0) actions.attack = "molotov_throw";
@@ -312,10 +378,57 @@ function computePlayerActions(pdata, player, kb) {
 }
 
 // ============================================================
-// Main loop
+// Dispatcher
 // ============================================================
 q5.update = function () {
-    // --- Background scroll ---
+   if (gameState === "startscreen") {
+    updateStartScreen();
+    if (isStartScreenDone()) {
+        gameState = "playing";
+        setWorldVisible(true);
+        // Sprites have been falling under gravity during the start screen. Reset them.
+        resetGameplayPositions();
+    }
+    return;
+}
+
+    if (gameState === "playing") {
+        updatePlaying();
+        if (pdata.hp <= 0) {
+            gameState = "gameover";
+            setWorldVisible(false);
+            gameOverScreen = new GameOverScreen({
+                quote: '"YOU FAILED, SOLDIER."',
+                onContinue: () => {
+                    restartGame();
+                    setWorldVisible(true);
+                    gameState = "playing";
+                    gameOverScreen = null;
+                },
+            });
+        }
+        return;
+    }
+
+    if (gameState === "gameover") {
+    // Wipe the gameplay rendering first
+    push();
+    translate(-camera.x, -camera.y);
+    fill(0);
+    rect(0, 0, width, height);
+    pop();
+    
+    gameOverScreen.draw();
+    gameOverScreen.update();
+    return;
+}
+};
+
+// ============================================================
+// Gameplay update (the old q5.update body)
+// ============================================================
+function updatePlaying() {
+    // Background scroll
     const positionAlongCorridor = camera.x % (height * 6);
     image(corridorBG, (3 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
     if (positionAlongCorridor < 0) {
@@ -324,10 +437,9 @@ q5.update = function () {
         image(corridorBG, (9 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
     }
 
-    // Grounded check: collision OR resting (velocity-based fallback, but only when not mid-jump)
+    // Grounded check
     const touchingTerrain = player.colliding(terrain) > 0;
     const restingVertically = Math.abs(player.vel.y) < 1.0;
-
     if (touchingTerrain) {
         pdata.groundedTimer = 8;
         pdata.airborne = false;
@@ -337,27 +449,22 @@ q5.update = function () {
         pdata.groundedTimer--;
     }
 
-    // --- Input -> action -> physics ---
     const actions = computePlayerActions(pdata, player, kb);
-
     player.vel.x = actions.moveX;
     player.facingRight = actions.facingRight;
 
     if (actions.jump) {
-    player.vel.y = -16;
-    pdata.groundedTimer = 0;
-    pdata.airborne = true;
-}
+        player.vel.y = -16;
+        pdata.groundedTimer = 0;
+        pdata.airborne = true;
+    }
 
     camera.x += (player.x - camera.x) * 0.67;
 
-    // --- Base animation: pure function of horizontal movement ---
     anim.playBase(actions.moveX !== 0 ? "player.run" : "player.idle");
 
-    // --- Attack cooldown tick ---
     if (pdata.attackCooldown > 0) pdata.attackCooldown--;
 
-    // --- One-shot attack animation: triggered by input, spawns hitbox on completion ---
     if (actions.attack && !anim.isOneShotPlaying() && pdata.attackCooldown === 0) {
         pdata.pendingAttack = actions.attack;
         player.color = "pink";
@@ -368,19 +475,14 @@ q5.update = function () {
         });
     }
 
-    // --- Advance + render animation ---
     anim.update();
     anim.render();
 
-    // --- Per-sprite everyFrame callbacks ---
+    // Per-sprite everyFrame callbacks
     for (let i = 0; i < allSprites.length; i++) {
         const sprite = allSprites[i];
-        if (!sprite.everyFrame) {
-            throw "no everyFrame object";
-        }
-
+        if (!sprite.everyFrame) throw "no everyFrame object";
         const everyFrame = Object.entries(sprite.everyFrame);
-
         for (let j = 0; j < everyFrame.length; j++) {
             everyFrame[j][1].f(sprite);
             everyFrame[j][1].duration--;
@@ -391,7 +493,10 @@ q5.update = function () {
             }
         }
     }
-};
+
+    // TEMP debug: press K to kill the player and see the gameover screen
+    if (kb.presses("k")) pdata.hp = 0;
+}
 
 // ============================================================
 // Helpers
@@ -401,47 +506,27 @@ function despawnAfter(sprite, frames) {
     sprite.everyFrame = sprite.everyFrame || {};
     sprite.everyFrame.despawn = {
         duration: frames + 1,
-        f: () => {
-            f++;
-            if (f >= frames) sprite.delete();
-        },
+        f: () => { f++; if (f >= frames) sprite.delete(); },
     };
 }
 
-// ============================================================
-// Attack spawning
-// FIX: No more GlueJoint — hitboxes follow the player via everyFrame manual repositioning.
-// This eliminates physics coupling that was breaking the player's terrain collisions.
-// FIX: despawnAfter ensures hitboxes (and their interference) actually go away.
-// ============================================================
 function createAttack(type) {
     let a;
-    let offsetX = 0;
-    let offsetY = 0;
+    let offsetX = 0, offsetY = 0;
     let attachToPlayer = true;
 
     if (type === "ground_punch") {
-        offsetX = 80;
-        offsetY = 40;
+        offsetX = 80; offsetY = 40;
         a = Sprite.withSensor(player.x + (player.facingRight ? offsetX : -offsetX), player.y + offsetY, 100, 60);
         a.life = 15;
-    }
-
-    else if (type === "air_forward") {
-        offsetX = 100;
-        offsetY = 40;
+    } else if (type === "air_forward") {
+        offsetX = 100; offsetY = 40;
         a = Sprite.withSensor(player.x + (player.facingRight ? offsetX : -offsetX), player.y + offsetY, 120, 40);
         a.life = 8;
-    }
-
-    else if (type === "air_explosion") {
-        offsetX = 0;
-        offsetY = 0;
+    } else if (type === "air_explosion") {
         a = Sprite.withSensor(player.x, player.y, 250);
         a.life = 25;
-    }
-
-    else if (type === "molotov_throw" || type === "beer_throw" || type === "bullet") {
+    } else if (type === "molotov_throw" || type === "beer_throw" || type === "bullet") {
         a = createProjectile(player, type);
         pdata.activeAttacks.add(a);
         pdata.attackCooldown = 6;
@@ -451,13 +536,10 @@ function createAttack(type) {
     a.img = "\u{1f98c}";
     a.type = type;
     a.facingRight = player.facingRight;
-
     pdata.activeAttacks.add(a);
     pdata.attackCooldown = a.life + 10;
-
     a.debug = true;
 
-    // Follow player manually via everyFrame — no joint, no physics coupling
     if (attachToPlayer) {
         a.everyFrame = a.everyFrame || {};
         a.everyFrame.follow = {
@@ -474,39 +556,28 @@ function createAttack(type) {
     despawnAfter(a, a.life);
 }
 
-// ============================================================
-// Hit resolution
-// ============================================================
 function handleHit(attack, target) {
     const isProjectile = attack.type === "molotov_throw" || attack.type === "beer_throw" || attack.type === "bullet";
-
-    const hittables = [...balls, ...doors];
+    const hittables = [...balls];
     const targetIsHittable = hittables.includes(target);
-
     const targetHasHP = target.hasOwnProperty("hp");
 
     if (isProjectile) {
         handleProjectileHit(attack, target, hittables);
-    }
-    else if (targetIsHittable) {
+    } else if (targetIsHittable) {
         if (attack.type === "ground_punch") {
             target.vel.x = attack.facingRight ? 15 : -15; target.vel.y = -5;
             target.hp -= 20;
-        }
-        else if (attack.type === "air_forward") {
+        } else if (attack.type === "air_forward") {
             target.vel.x = attack.facingRight ? 20 : -20; target.vel.y = -10;
             target.hp -= 18;
-        }
-        else if (attack.type === "air_explosion") {
-            let angle = atan2(target.y - attack.y, target.x - attack.x);
+        } else if (attack.type === "air_explosion") {
+            const angle = atan2(target.y - attack.y, target.x - attack.x);
             target.vel.x = 25 * cos(angle);
             target.vel.y = 25 * sin(angle) ** 2;
-
             target.hp -= 37;
         }
     }
 
-    if (targetHasHP && target.hp < 0) {
-        target.delete();
-    }
+    if (targetHasHP && target.hp < 0) target.delete();
 }
