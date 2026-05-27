@@ -41,12 +41,10 @@ export function createProjectile(sender, projectileType) {
 
 export function handleProjectileHit(proj, target, hittables) {
     const targetIsHittable = hittables.includes(target);
-    const targetHasHP = target.hasOwnProperty("hp");
 
-    if (proj.type === "molotov_explosion") {
-        console.warn("well color me impressed");
-        return;
-    }
+    // The blast does its own per-target damage via its everyFrame callback;
+    // ignore plain overlaps for an already-detonated molotov.
+    if (proj.type === "molotov_explosion") return;
 
     if (proj.type === "molotov_throw") {
         proj.type = "molotov_explosion";
@@ -58,48 +56,30 @@ export function handleProjectileHit(proj, target, hittables) {
         const bond = new GlueJoint(proj, worldAnchor);
         bond.visible = false;
 
-        proj.explosionID = `${frameCount} + ${Math.floor(Math.random() * 1000)}`; // future: better explosion ID system
+        proj.explosionID = `${frameCount}+${Math.floor(Math.random() * 1000)}`;
 
+        // Damage each destructible in range exactly once (the flag guards
+        // against the AoE re-hitting the same target every frame).
         proj.everyFrame["overlaps"] = {duration: Infinity, f: function(explosion) {
-            for (const h of hittables) { // future: probably irrelevant but could update to check for new hittables?
-                if (explosion.overlaps(h) && !h.everyFrame["antigravity-" + proj.explosionID]) { // future: better "already-hit detection"
-                    h.color = color([Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5, Math.random() * 0.5 + 0.5]);
-
-                    h.everyFrame["antigravity-" + proj.explosionID] = {duration: Infinity, f: function(self) {
-                        self.bearing = 90;
-                        self.applyForceScaled(world.gravity.y * -2);
-                    }};
-
-                    if (h.hasOwnProperty("hp")) {
-                        h.hp -= 42;
-
-                        if (h.hp < 0) {
-                            // future: death animation
-                            h.delete();
-                        }
-                    }
+            for (const h of hittables) {
+                if (h.kind === "dead") continue;
+                const flag = "_hitByExp_" + proj.explosionID;
+                if (explosion.overlaps(h) && !h[flag]) {
+                    h[flag] = true;
+                    window.applyAttackDamage("molotov_explosion", h);
                 }
             }
         }};
         return;
     }
 
-    if (!targetIsHittable) {
-        if (proj.type !== "molotov_explosion" && proj.type !== "molotov_throw") {
-            proj.delete();
-        }
+    // Bottles and bullets: shatter on contact. Damage is centralized in
+    // window.applyAttackDamage so weapon lethality stays consistent. Guard
+    // against landing twice in the frames before the sprite is removed.
+    if (proj.spent) return;
+    proj.spent = true;
+    if (targetIsHittable) {
+        window.applyAttackDamage(proj.type, target);
     }
-    else {
-        if (proj.type === "beer_throw") {
-            target.vel.x = proj.vel.x; target.vel.y = -20;
-            if (targetHasHP) target.hp -= 15;
-            proj.delete();
-        }
-        else if (proj.type === "bullet") {
-            if (targetHasHP) target.hp -= 25;
-            if (terrain.includes(target)/* && !(targetHasHP && target.hp < 0)*/) {
-                proj.delete();
-            }
-        }
-    }
+    proj.delete();
 }

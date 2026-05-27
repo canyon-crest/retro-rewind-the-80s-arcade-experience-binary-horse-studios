@@ -248,6 +248,8 @@ _drawBackdrop() {
         // Draw left and right halves around the tie
         rect(cx - halfW, y, halfW - 16, 1);
         rect(cx + 16, y, halfW - 16, 1);
+      
+    
       } else {
         rect(cx - halfW, y, halfW * 2, 1);
       }
