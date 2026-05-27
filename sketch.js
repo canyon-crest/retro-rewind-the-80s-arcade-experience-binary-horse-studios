@@ -1,5 +1,14 @@
 ﻿window.exe = _ => eval(_);
 
+function loadPNG(src) {
+    return new Promise((resolve, reject) => {
+        const img = document.createElement("img");
+        img.src = src;
+        img.onload = () => resolve(img);
+        img.onerror = e => reject(e);
+    });
+}
+
 await Canvas(1600, 900);
 noSmooth();
 
@@ -34,25 +43,23 @@ import { createProjectile, handleProjectileHit } from "./items.js";
 // Spritesheet registry: maps sheet names to loaded images and metadata
 const spritesheets = {
     usIdle: {
-        image: await loadImage("./idle.png"),
-        frameWidth: 30,
+        image: await loadPNG("./idle.png"),
+        frameWidth: 31,
         frameHeight: 73,
     },
     usRun: {
-        image: await loadImage("./run.png"),
-        frameWidth: 37,
+        image: await loadPNG("./run.png"),
+        frameWidth: 46,
         frameHeight: 70,
     },
     usFire: {
-        image: await loadImage("./fire.png"),
+        image: await loadPNG("./fire.png"),
         frameWidth: 50,
         frameHeight: 73,
     }
 };
 
-// TODO: Load spritesheet images
-// Example: spritesheets.player.image = await loadImage(\"path/to/player.png\");
-// Animation sequences: [spritesheet]/[position] blocks
+
 const animationSequences = {
     "player.idle": {
         blocks: [
@@ -64,16 +71,16 @@ const animationSequences = {
 
     "player.run": {
         blocks: [
-            { sheet: "usRun", framePos: { x: 2, y: 0 }, duration: 5 },
-            { sheet: "usRun", framePos: { x: 1, y: 1 }, duration: 5 },
-            { sheet: "usRun", framePos: { x: 2, y: 1 }, duration: 5 },
-            { sheet: "usRun", framePos: { x: 0, y: 1 }, duration: 5 },
-            { sheet: "usRun", framePos: { x: 0, y: 0 }, duration: 5 }
+            { sheet: "usRun", framePos: { x: 2, y: 0 }, duration: 6 },
+            { sheet: "usRun", framePos: { x: 1, y: 1 }, duration: 4 },
+            { sheet: "usRun", framePos: { x: 2, y: 1 }, duration: 4 },
+            { sheet: "usRun", framePos: { x: 0, y: 1 }, duration: 6 },
+            { sheet: "usRun", framePos: { x: 0, y: 0 }, duration: 10 }
         ],
         loop: true
     },
     
-    /*// Ground punch: immediate attack
+    // Ground punch: immediate attack
     "player.ground_punch.startup": {
         blocks: [
             { sheet: "player", framePos: { x: 1, y: 0 }, duration: 5 }
@@ -104,18 +111,22 @@ const animationSequences = {
     // Projectile animations
     "player.molotov_throw.startup": {
         blocks: [
-            { sheet: "player", framePos: { x: 5, y: 0 }, duration: 5 }
+            { sheet: "usRun", framePos: { x: 1, y: 0 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 2, y: 0 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 1, y: 1 }, duration: 5 }
         ],
         loop: false,
         onComplete: "spawn_molotov_throw"
     },
     "player.beer_throw.startup": {
         blocks: [
-            { sheet: "player", framePos: { x: 6, y: 0 }, duration: 5 }
+            { sheet: "usRun", framePos: { x: 1, y: 0 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 2, y: 0 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 1, y: 1 }, duration: 5 }
         ],
         loop: false,
         onComplete: "spawn_beer_throw"
-    },*/
+    },
     "player.bullet.startup": {
         blocks: [
             { sheet: "usFire", framePos: { x: 0, y: 2 }, duration: 2 },
@@ -151,6 +162,43 @@ let pdata = {
 
 const corridorBG = await loadImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAAoCAYAAADAOHfQAAAFCklEQVR4AexdPY4UPRD116Rf9mX7BdyAcCRyUqQl4hpcg7sQzAEgQwR7CoTQRpAiNmHxW7ZaNaZcbve6Sz3wpH7rnyq/Z5dd3b07I5gOh8MtwRjwDJzXGUgp3QLT1dVVKnFxcZGAsn9tG1yANR79gGVb0wcuoDYWNqBm7+0HF2CNQz9g2db0gQuojYUNqNl7+8EFWOPQD1i2NX3gAmpjYQNq9t5+cAHWOPQDlm1NH7iANWMxJifq3YU6gEa+4aJI091P/mAEGIHdRqBMWt02E/h4PA5djMfn2dZMosXXsvdqenyerVcH/i2+lh0cPfD4PFuPhvi2+Fp24VlaenyebSm/9hvBp5MW3NI2ExgOfwG4REbgrCIgSasnbSbw5eWl9nlw3ePzbGuEW3wte6+mx+fZenXg3+Jr2cHRA4/Ps/VoiG+Lr2UXnqWlx+fZlvJrv9F8mttMYO3AOiPACOw3AmYCP+id/dGrlDJub26SwOPzbM2wZZ0eLfBF6kVqcW2IQAWd5yR63yqzrnbLX6DhYCYwDDPuF49EWYQ88Pbb6/xzxRWphelF6kVqtdd2d5M92c88hvuWg1Be0ftW6httfCQlSWwm8PzOjslnAmxsD/KQk2vmO+n91ZhtAVpQjNSL1OLaXifvjCI+GvPe6M77+mwLOpP3sqsKM4E1E4Ki21vWI7Wwjki9SC2uDREYg+h9WzprPIXhayaw/A5w+fxjevHy5YMBoRoitTCHSL1ILa6t75wiXjVE71ttHq1+JLGZwDIQCxkF4ayVo3TAU9PQ/fAbBc1r1UfpgMfiL/vgNwold9kepQOekttqw++BSDLe4td94jei1Lwj62YCz78DDFLy+DzbGvkWX8veq+nxebZeHfi3+Fp2cPTA4/NsPRri2+Jr2YVnaenxebal/NpvNJ/mNhNYO7DOCDAC+42AmcB4ZRg5ZY/Ps62ZQ4uvZe/V9Pg8W68O/Ft8LTs4euDxebYeDfFt8bXswrO09Pg821J+7TeaT3ObCawduuv403uGfIkDZTfH0gFZB59lQkOwdOgqv0i9SC0EI1IvUusPX5uZwCfv7PfBRqKkR7++ZeXWc8DKP72f8GW7vk5sG2tBN1IvUotrc85mDs6ez2Se3urLTOCZDQmVG1h8D/KQ/itSC7OL1IvU4trML3QgLN2I3reOCV5fXyfATGD9zo7E7eA1XTVf6aBtW2tBO1IvUotrQwSWQ+9NOUrbIs5kqb+0Xf0cWF79Rn2RQ/isiYktQgv6kXqRWlxb3xc5ZG8QtxJiizqTpf6SNpIXftUnMO5CowHBEqM1hK/UkbbY+8vj/AWA4/H4W134dXk0/Eb0aQ1dH8FtcWgNqVt+I/qEvyxHcFscpQ7alt+IPnCPhpnAo0XIxwgwAttEgAm8TVzJygiERIAJHBJmijAC20SACbxNXP8wVi5nTxHAx0cyHyawRIIlI7DzCMi/woF/nVKSmAm8803j9BgBREAnL9oC/N9ICUbiwDgcGIO95gESFk9elADqeApPb66+J4Ix4BmonYH99H9KT5IG9mx6+v/XRDAGPAPneQb4OzDeRwhG4EwjMH3+8jgRjAHPwHmegendv+/TPzcfEkvGgefg/PJgevZ1Sm//+5E2KcnLuPJ8bZpfE5OXNy/evM/3IcYnMJ8Qmz4heHPY9ubAJzBf8/maf8Y3cT6Bt9o88vLJHvBw4BM4IMh8jdz2NfJvju9PAAAA//+D7uq9AAAABklEQVQDABKMPA4wFkJmAAAAAElFTkSuQmCC");
 
+// Pre-extract all animation frames from spritesheets
+const animationFrames = {};
+
+async function extractAllAnimationFrames() {
+    for (const [animName, sequence] of Object.entries(animationSequences)) {
+        animationFrames[animName] = [];
+        
+        for (const block of sequence.blocks) {
+            const sheet = spritesheets[block.sheet];
+            if (!sheet || !sheet.image) {
+                animationFrames[animName].push("\u{1f98a}"); // fallback emoji
+                continue;
+            }
+            
+            const framePos = block.framePos;
+            let srcX = framePos.x;
+            let srcY = framePos.y;
+            
+            // If framePos values are small integers (likely grid indices), convert to pixel coords
+            if (framePos.x < 20 && framePos.y < 20) {
+                srcX = framePos.x * sheet.frameWidth;
+                srcY = framePos.y * sheet.frameHeight;
+            }
+            
+            const frameImage = await extractFrameAsImage(
+                sheet.image,
+                srcX, srcY,
+                sheet.frameWidth,
+                sheet.frameHeight
+            );
+            
+            animationFrames[animName].push(frameImage || "\u{1f98a}");
+        }
+    }
+}
+
+await extractAllAnimationFrames();
 
 let player;
 
@@ -179,7 +227,7 @@ let doors = [];
         doors[i].hp = 67;
     }
 
-    player = new Sprite(0, 300, 100, 100);
+    player = new Sprite(0, 300, 100, 180); // CONSTANT
     player.facingRight = true;
     player.color = "white";
     player.rotationLock = true;
@@ -312,8 +360,8 @@ function updateAnimation() {
 }
 
 // Render the current animation frame to the player sprite
-// Extract a single frame from a spritesheet as a data URI
-function extractFrameAsDataURI(sheetImage, srcX, srcY, frameWidth, frameHeight) {
+// Extract a single frame from a spritesheet as an Image object
+async function extractFrameAsImage(sheetImage, srcX, srcY, frameWidth, frameHeight) {
     // Create offscreen canvas at frame dimensions
     const canvas = document.createElement('canvas');
     canvas.width = frameWidth;
@@ -336,56 +384,22 @@ function extractFrameAsDataURI(sheetImage, srcX, srcY, frameWidth, frameHeight) 
         return null;
     }
     
-    // Convert canvas to data URI
-    return canvas.toDataURL();
+    // Convert canvas to data URL and load into Image object
+    const img = await loadImage(canvas.toDataURL());
+    img.resize(frameWidth * 20/3, frameHeight * 20/3); // CONSTANT
+    return img;
 }
 
 function renderCurrentFrame() {
     if (!pdata.activeAnimation) return;
     
-    const sequence = animationSequences[pdata.activeAnimation];
-    if (!sequence || sequence.blocks.length === 0) return;
-    
-    const block = sequence.blocks[pdata.animationFrame];
-    
-    // Get spritesheet
-    const sheetKey = block.sheet;
-    const sheet = spritesheets[sheetKey];
-    
-    if (!sheet || !sheet.image) {
-        // Fallback: use placeholder emoji if spritesheet not loaded
+    const framesList = animationFrames[pdata.activeAnimation];
+    if (!framesList || framesList.length === 0) {
         player.img = "\u{1f98a}";
         return;
     }
     
-    // Extract frame from spritesheet
-    // framePos can be: {x, y} pixel coords or {col, row} grid indices
-    const framePos = block.framePos;
-    
-    // Determine pixel coordinates
-    let srcX = framePos.x;
-    let srcY = framePos.y;
-    
-    // If framePos values are small integers (likely grid indices), convert to pixel coords
-    if (framePos.x < 20 && framePos.y < 20) {
-        srcX = framePos.x * sheet.frameWidth;
-        srcY = framePos.y * sheet.frameHeight;
-    }
-    
-    // Extract frame as a canvas-based crop and convert to data URI
-    const frameDataURI = extractFrameAsDataURI(
-        sheet.image,
-        srcX, srcY,
-        sheet.frameWidth,
-        sheet.frameHeight
-    );
-    
-    if (frameDataURI) {
-        player.img = frameDataURI;
-    } else {
-        // Fallback if cropping failed
-        player.img = "\u{1f98a}";
-    }
+    player.img = framesList[pdata.animationFrame];
 }
 
 q5.update = function () {
