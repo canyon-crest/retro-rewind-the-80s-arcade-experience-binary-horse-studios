@@ -136,62 +136,50 @@ export class GameOverScreen {
   // Public: call this each frame to render the screen
 draw() {
     push();
-    translate(-camera.x, -camera.y);
+    //translate(-camera.x - width / 2, -camera.y);
     noSmooth();
     noStroke();
-    fill(0);
-    rect(0, 0, width, height);
-    scale(width / this.W, height / this.H);
 
+    fill(0);
+    rect(-width, -height, width * 3, height * 3);
+
+    scale(width / this.W, height / this.H);
+    translate(-this.W/2,-this.H/2);
     this._drawBackdrop();
     this._drawSilhouette();
     this._drawSpeechBubble();
     this._drawGameOverText();
     this._drawSubtitle();
     this._drawScanlines();
-
+    
     pop();
 }
   // =========================================================================
   // BACKDROP - radial red gradient (banded for 8-bit feel)
   // =========================================================================
-  _drawBackdrop() {
+_drawBackdrop() {
     const W = this.W, H = this.H;
     const cx = W / 2;
     const cy = H / 2 + 30;
     const maxD = Math.sqrt(W * W + H * H) / 2;
 
-    // Use 4x4 blocks for chunky 8-bit gradient quantization
     const BLOCK = 4;
-    for (let by = 0; by < H; by += BLOCK) {
-      for (let bx = 0; bx < W; bx += BLOCK) {
-        const dx = bx - cx;
-        const dy = by - cy;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        const t = Math.min(1, d / maxD);
-        let c;
-        if (t < 0.15) c = this.C.BG_HOT;
-        else if (t < 0.32) c = this.C.BG_BRIGHT;
-        else if (t < 0.55) c = this.C.BG_MID;
-        else c = this.C.BG_DEEP;
-        fill(c);
-        rect(bx, by, BLOCK, BLOCK);
-      }
+    for (let by = -H; by < H * 2; by += BLOCK) {
+        for (let bx = -W; bx < W * 2; bx += BLOCK) {
+            const dx = bx - cx;
+            const dy = by - cy;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            const t = Math.min(1, d / maxD);
+            let c;
+            if (t < 0.15) c = this.C.BG_HOT;
+            else if (t < 0.32) c = this.C.BG_BRIGHT;
+            else if (t < 0.55) c = this.C.BG_MID;
+            else c = this.C.BG_DEEP;
+            fill(c);
+            rect(bx, by, BLOCK, BLOCK);
+        }
     }
-
-    // Dither rings at band boundaries
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const dx = x - cx, dy = y - cy;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        const t = Math.min(1, d / maxD);
-        if ((x + y) % 2 !== 0) continue;
-        if (Math.abs(t - 0.15) < 0.015) { fill(this.C.BG_BRIGHT); rect(x, y, 1, 1); }
-        else if (Math.abs(t - 0.32) < 0.015) { fill(this.C.BG_MID); rect(x, y, 1, 1); }
-        else if (Math.abs(t - 0.55) < 0.015) { fill(this.C.BG_DEEP); rect(x, y, 1, 1); }
-      }
-    }
-  }
+}
 
   // =========================================================================
   // SILHOUETTE — head, neck, shoulders, suit

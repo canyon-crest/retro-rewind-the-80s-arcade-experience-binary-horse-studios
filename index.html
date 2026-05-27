@@ -12,9 +12,16 @@
             padding: 0;
             overflow: hidden;
             overscroll-behavior: none;
+            width: 100vw;
+            height: 100vh;
         }
         canvas {
             display: block;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100vw !important;
+            height: 100vh !important;
         }
     </style>
 </head>
@@ -22,7 +29,11 @@
 <body>
     <main></main>
 
-    <!-- q5 + q5play (online) -->
+    <script>
+        window.Q5 = window.Q5 || {};
+        window.Q5.disableWebGPU = true;
+    </script>
+
     <script type="module" src="https://q5js.org/q5.js"></script>
     <script type="importmap">
         { "imports": {
@@ -31,7 +42,6 @@
     </script>
     <script type="module" src="https://q5play.org/q5play.js"></script>
 
-    <!-- Your sketch -->
     <script type="module" src="sketch.js"></script>
 </body>
 </html>
