@@ -1,4 +1,4 @@
-﻿window.exe = _ => eval(_);
+window.exe = _ => eval(_);
 
 function loadPNG(src) {
     return new Promise((resolve, reject) => {
@@ -12,14 +12,33 @@ function loadPNG(src) {
 await Canvas(window.innerWidth, window.innerHeight);
 noSmooth();
 
-canvas.style.position = "fixed";
-canvas.style.left = "0";
-canvas.style.top = "0";
-canvas.style.width = "100vw";
-canvas.style.height = "100vh";
+// Reference and position the core engine canvas
+const mainCanvas = canvas;
+const mainCtx = ctx;
+
+mainCanvas.style.position = "fixed";
+mainCanvas.style.left = "0";
+mainCanvas.style.top = "0";
+mainCanvas.style.width = "100vw";
+mainCanvas.style.height = "100vh";
+mainCanvas.style.zIndex = "1";
+
+// Create and position the separate superscreen overlay canvas
+const superscreen = document.createElement("canvas");
+superscreen.style.position = "fixed";
+superscreen.style.left = "0";
+superscreen.style.top = "0";
+superscreen.style.width = "100vw";
+superscreen.style.height = "100vh";
+superscreen.style.zIndex = "10";
+superscreen.style.display = "block"; // Active initially for start screen
+document.body.appendChild(superscreen);
+const superCtx = superscreen.getContext("2d");
 
 window.onresize = function() {
     resizeCanvas(window.innerWidth, window.innerHeight);
+    superscreen.width = window.innerWidth;
+    superscreen.height = window.innerHeight;
     camera.x = width / 2;
     camera.y = height / 2;
 };
@@ -198,7 +217,7 @@ const animationSequences = {
 
 const animationFrames = await buildAnimationFrames(spritesheets, animationSequences);
 
-const corridorBG = await loadImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAAoCAYAAADAOHfQAAAFCklEQVR4AexdPY4UPRD116Rf9mX7BdyAcCRyUqQl4hpcg7sQzAEgQwR7CoTQRpAiNmHxW7ZaNaZcbve6Sz3wpH7rnyq/Z5dd3b07I5gOh8MtwRjwDJzXGUgp3QLT1dVVKnFxcZGAsn9tG1yANR79gGVb0wcuoDYWNqBm7+0HF2CNQz9g2db0gQuojYUNqNl7+8EFWOPQD1i2NX3gAmpjYQNq9t5+cAHWOPQDlm1NH7iANWMxJifq3YU6gEa+4aJI091P/mAEGIHdRqBMWt02E/h4PA5djMfn2dZMosXXsvdqenyerVcH/i2+lh0cPfD4PFuPhvi2+Fp24VlaenyebSm/9hvBp5MW3NI2ExgOfwG4REbgrCIgSasnbSbw5eWl9nlw3ePzbGuEW3wte6+mx+fZenXg3+Jr2cHRA4/Ps/VoiG+Lr2UXnqWlx+fZlvJrv9F8mttMYO3AOiPACOw3AmYCP+id/dGrlDJub26SwOPzbM2wZZ0eLfBF6kVqcW2IQAWd5yR63yqzrnbLX6DhYCYwDDPuF49EWYQ88Pbb6/xzxRWphelF6kVqtdd2d5M92c88hvuWg1Be0ftW6httfCQlSWwm8PzOjslnAmxsD/KQk2vmO+n91ZhtAVpQjNSL1OLaXifvjCI+GvPe6M77+mwLOpP3sqsKM4E1E4Ki21vWI7Wwjki9SC2uDREYg+h9WzprPIXhayaw/A5w+fxjevHy5YMBoRoitTCHSL1ILa6t75wiXjVE71ttHq1+JLGZwDIQCxkF4ayVo3TAU9PQ/fAbBc1r1UfpgMfiL/vgNwold9kepQOekttqw++BSDLe4td94jei1Lwj62YCz78DDFLy+DzbGvkWX8veq+nxebZeHfi3+Fp2cPTA4/NsPRri2+Jr2YVnaenxebal/NpvNJ/mNhNYO7DOCDAC+42AmcB4ZRg5ZY/Ps62ZQ4uvZe/V9Pg8W68O/Ft8LTs4euDxebYeDfFt8bXswrO09Pg821J+7TeaT3ObCawduuv403uGfIkDZTfH0gFZB59lQkOwdOgqv0i9SC0EI1IvUusPX5uZwCfv7PfBRqKkR7++ZeXWc8DKP72f8GW7vk5sG2tBN1IvUotrc85mDs6ez2Se3urLTOCZDQmVG1h8D/KQ/itSC7OL1IvU4trML3QgLN2I3reOCV5fXyfATGD9zo7E7eA1XTVf6aBtW2tBO1IvUotrQwSWQ+9NOUrbIs5kqb+0Xf0cWF79Rn2RQ/isiYktQgv6kXqRWlxb3xc5ZG8QtxJiizqTpf6SNpIXftUnMO5CowHBEqM1hK/UkbbY+8vj/AWA4/H4W134dXk0/Eb0aQ1dH8FtcWgNqVt+I/qEvyxHcFscpQ7alt+IPnCPhpnAo0XIxwgwAttEgAm8TVzJygiERIAJHBJmijAC20SACbxNXP8wVi5nTxHAx0cyHyawRIIlI7DzCMi/woF/nVKSmAm8803j9BgBREAnL9oC/N9ICUbiwDgcGIO95gESFk9elADqeApPb66+J4Ix4BmonYH99H9KT5IG9mx6+v/XRDAGPAPneQb4OzDeRwhG4EwjMH3+8jgRjAHPwHmegendv+/TPzcfEkvGgefg/PJgevZ1Sm//+5E2KcnLuPJ8bZpfE5OXNy/evM/3IcYnMJ8Qmz4heHPY9ubAJzBf8/maf8Y3cT6Bt9o88vLJHvBw4BM4IMh8jdz2NfJvju9PAAAA//+D7uq9AAAABklEQVQDABKMPA4wFkJmAAAAAElFTkSuQmCC");
+const corridorBG = await loadImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAAoCAYAAADAOHfQAAAFCklEQVR4AexdPY4UPRD116Rf9mX7BdyAcCRyUqQl4hpcg7sQzAEgQwR7CoTQRpAiNmHxW7ZaNaZcbve6Sz3wpH7rnyq/Z5dd3b07I5gOh8MtwRjwDJzXGUgp3QLT1dVVKnFxcZGAsn9tG1yANR79gGVb0wcuoDYWNqBm7+0HF2CNQz9g2db0gQuojYUNqNl7+8EFWOPQD1i2NX3gAmpjYQNq9t5+cAHWOPQDlm1NH7iANWMxJifq3YU6gEa+4aJI091P/mAEGIHdRqBMWt02E/h4PA5djMfn2dZMosXXsvdqenyerVcH/i2+lh0cPfD4PFuPhvi2+Fp24VlaenyebSm/9hvBp5MW3NI2ExgOfwG4REbgrCIgSasnbSbw5eWl9nlw3ePzbGuEW3wte6+mx+fZenXg3+Jr2cHRA4/Ps/VoiG+Lr2UXnqWlx+fZlvJrv9F8mttMYO3AOiPACOw3AmYCP+id/dGrlDJub26SwOPzbM2wZZ0eLfBF6kVqcW2IQAWd5yR63yqzrnbLX6DhYCYwDDPuF49EWYQ88Pbb6/xzxRWphelF6kVqtdd2d5M92c88hvuWg1Be0ftW6httfCQlSWwm8PzOjslnAmxsD/KQk2vmO+n91ZhtAVpQjNSL1OLaXifvjCI+GvPe6M77+mwLOpP3sqsKM4E1E4Ki21vWI7Wwjki9SC2uDREYg+h9WzprPIX真实样张");
 
 // ============================================================
 // World setup
@@ -272,59 +291,13 @@ let gameState = "startscreen"; // "startscreen" | "playing" | "gameover"
 
 initStartScreen();
 let gameOverScreen = null;
-let stashedSprites = [];
-
-function setWorldVisible(visible) {
-    console.log("setWorldVisible:", visible);
-    
-    if (!visible) {
-        // Move everything far away so it doesn't render
-        for (const s of allSprites) {
-            stashedSprites.push({
-                sprite: s,
-                x: s.x,
-                y: s.y,
-                vx: s.vel ? s.vel.x : 0,
-                vy: s.vel ? s.vel.y : 0,
-            });
-            s.x = -999999;
-            s.y = -999999;
-            if (s.vel) { s.vel.x = 0; s.vel.y = 0; }
-            s.visible = false;
-        }
-    } else {
-        // Restore everything
-        for (const stash of stashedSprites) {
-            stash.sprite.x = stash.x;
-            stash.sprite.y = stash.y;
-            if (stash.sprite.vel) {
-                stash.sprite.vel.x = stash.vx;
-                stash.sprite.vel.y = stash.vy;
-            }
-            stash.sprite.visible = true;
-        }
-        stashedSprites = [];
-        // Also clear active attacks if any
-        for (const a of [...pdata.activeAttacks]) a.delete();
-    }
-}
-setWorldVisible(false); // start hidden during the title screen
-
-// p5/q5 dispatches mouse clicks to a global mousePressed function
-window.mousePressed = function() {
-    if (gameState === "startscreen") {
-        handleStartScreenClick(mouseX, mouseY);
-    }
-};
 
 function resetGameplayPositions() {
-    // Player back to spawn
     player.x = 0;
     player.y = 300;
     player.vel.x = 0;
     player.vel.y = 0;
     
-    // Balls back into the level
     let i = 0;
     for (const b of balls) {
         b.x = 100 + (i * 50) % 600;
@@ -334,11 +307,10 @@ function resetGameplayPositions() {
         i++;
     }
     
-    // Camera back to start
     camera.x = width / 2;
 }
+
 function restartGame() {
-    setWorldVisible(true);
     resetGameplayPositions();
     
     player.facingRight = true;
@@ -351,6 +323,13 @@ function restartGame() {
     for (const a of [...pdata.activeAttacks]) a.delete();
     anim.playBase("player.idle");
 }
+
+window.mousePressed = function() {
+    if (gameState === "startscreen") {
+        handleStartScreenClick(mouseX, mouseY);
+    }
+};
+
 // ============================================================
 // Input -> intended actions
 // ============================================================
@@ -378,30 +357,45 @@ function computePlayerActions(pdata, player, kb) {
 }
 
 // ============================================================
-// Dispatcher
+// Dispatcher / Core Loop Interceptor
 // ============================================================
 q5.update = function () {
-   if (gameState === "startscreen") {
-    updateStartScreen();
-    if (isStartScreenDone()) {
-        gameState = "playing";
-        setWorldVisible(true);
-        // Sprites have been falling under gravity during the start screen. Reset them.
-        resetGameplayPositions();
+    // Default runtime variables back to the active main canvas context
+    canvas = mainCanvas;
+    ctx = mainCtx;
+
+    if (gameState === "startscreen") {
+        superscreen.style.display = "block";
+        canvas = superscreen;
+        ctx = superCtx;
+
+        ctx.clearRect(0, 0, width, height);
+        
+        push();
+        translate(camera.x, camera.y); // Maintain context matrix coordination
+        updateStartScreen();
+        pop();
+
+        if (isStartScreenDone()) {
+            gameState = "playing";
+            resetGameplayPositions();
+        }
+
+        // Return context back to main for background engine draws
+        canvas = mainCanvas;
+        ctx = mainCtx;
+        return;
     }
-    return;
-}
 
     if (gameState === "playing") {
+        superscreen.style.display = "none";
         updatePlaying();
         if (pdata.hp <= 0) {
             gameState = "gameover";
-            setWorldVisible(false);
             gameOverScreen = new GameOverScreen({
                 quote: '"YOU FAILED, SOLDIER."',
                 onContinue: () => {
                     restartGame();
-                    setWorldVisible(true);
                     gameState = "playing";
                     gameOverScreen = null;
                 },
@@ -411,24 +405,35 @@ q5.update = function () {
     }
 
     if (gameState === "gameover") {
-    // Wipe the gameplay rendering first
-    push();
-    translate(-camera.x, -camera.y);
-    fill(0);
-    rect(0, 0, width, height);
-    pop();
-    
-    gameOverScreen.draw();
-    gameOverScreen.update();
-    return;
-}
+        superscreen.style.display = "block";
+        canvas = superscreen;
+        ctx = superCtx;
+
+        ctx.clearRect(0, 0, width, height);
+        
+        push();
+        translate(camera.x, camera.y); // Re-align with engine transformation metrics
+
+        push();
+        translate(-camera.x, -camera.y);
+        fill(0);
+        rect(0, 0, width, height);
+        pop();
+        
+        gameOverScreen.draw();
+        gameOverScreen.update();
+        pop();
+
+        canvas = mainCanvas;
+        ctx = mainCtx;
+        return;
+    }
 };
 
 // ============================================================
-// Gameplay update (the old q5.update body)
+// Gameplay update
 // ============================================================
 function updatePlaying() {
-    // Background scroll
     const positionAlongCorridor = camera.x % (height * 6);
     image(corridorBG, (3 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
     if (positionAlongCorridor < 0) {
@@ -437,7 +442,6 @@ function updatePlaying() {
         image(corridorBG, (9 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
     }
 
-    // Grounded check
     const touchingTerrain = player.colliding(terrain) > 0;
     const restingVertically = Math.abs(player.vel.y) < 1.0;
     if (touchingTerrain) {
@@ -478,7 +482,6 @@ function updatePlaying() {
     anim.update();
     anim.render();
 
-    // Per-sprite everyFrame callbacks
     for (let i = 0; i < allSprites.length; i++) {
         const sprite = allSprites[i];
         if (!sprite.everyFrame) throw "no everyFrame object";
@@ -494,7 +497,6 @@ function updatePlaying() {
         }
     }
 
-    // TEMP debug: press K to kill the player and see the gameover screen
     if (kb.presses("k")) pdata.hp = 0;
 }
 
