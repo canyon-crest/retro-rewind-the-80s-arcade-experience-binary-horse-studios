@@ -1,7 +1,7 @@
 export function createProjectile(sender, projectileType) {
     const dir = sender.facingRight ? 1 : -1;
     const startX = sender.x + dir * 30;
-    const startY = sender.y - 8;
+    const startY = sender.y - 48; // CONSTANT
 
     const proj = Sprite.withSensor(startX, startY, 50);
     proj.facingRight = dir > 0;
@@ -27,7 +27,7 @@ export function createProjectile(sender, projectileType) {
         proj.diameter = 20;
         proj.img = '\u25aa\ufe0f';
         proj.vel.x = dir * 50;
-        proj.vel.y = -2;
+        proj.vel.y = -1;
 
         proj.everyFrame[Math.max(-1, ...Object.keys(proj.everyFrame)) + 1] = {duration: Infinity, f: function(self) {
             self.bearing = 90;

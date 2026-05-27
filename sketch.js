@@ -111,7 +111,7 @@ const animationSequences = {
     // Projectile animations
     "player.molotov_throw.startup": {
         blocks: [
-            { sheet: "usRun", framePos: { x: 1, y: 0 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 1, y: 0 }, duration: 2 },
             { sheet: "usRun", framePos: { x: 2, y: 0 }, duration: 5 },
             { sheet: "usRun", framePos: { x: 1, y: 1 }, duration: 5 }
         ],
@@ -120,7 +120,7 @@ const animationSequences = {
     },
     "player.beer_throw.startup": {
         blocks: [
-            { sheet: "usRun", framePos: { x: 1, y: 0 }, duration: 5 },
+            { sheet: "usRun", framePos: { x: 1, y: 0 }, duration: 2 },
             { sheet: "usRun", framePos: { x: 2, y: 0 }, duration: 5 },
             { sheet: "usRun", framePos: { x: 1, y: 1 }, duration: 5 }
         ],
@@ -155,6 +155,7 @@ let pdata = {
     
     // Movement animation state
     currentMovementAnim: null,  // "idle" or "run" or null
+    currentDefaultAnimation: "idle", // Default animation to return to ("idle" or "run")
     lastMoveX: 0,               // Track previous movement for state changes
 
     inventory: []
@@ -304,17 +305,6 @@ function computePlayerActions(pdata, player, kb) {
     return actions;
 }
 
-function attackImageFor(type) {
-    return {
-        ground_punch: "🥊",
-        air_forward: "👊",
-        air_explosion: "💥",
-        molotov_throw: "🍾",
-        beer_throw: "🍺",
-        bullet: "🔫"
-    }[type] || "\u{1f98a}";
-}
-
 // Start playing an animation sequence
 function startAnimation(name, loop = true) {
     if (!animationSequences[name]) {
@@ -348,7 +338,7 @@ function updateAnimation() {
                 pdata.animationFrame = 0;
                 pdata.animationTimer = sequence.blocks[0].duration;
             } else {
-                // Animation finished, stay on last frame or clear
+                // Animation finished, clear to allow spawning and state transitions
                 pdata.activeAnimation = null;
                 pdata.animationFrame = 0;
                 return;
@@ -437,10 +427,20 @@ q5.update = function () {
             // Start run animation
             startAnimation("player.run", true);
             pdata.currentMovementAnim = "run";
+            pdata.currentDefaultAnimation = "run";
         } else if (!isMoving && pdata.currentMovementAnim !== "idle") {
             // Start idle animation
             startAnimation("player.idle", true);
             pdata.currentMovementAnim = "idle";
+            pdata.currentDefaultAnimation = "idle";
+        } else if (!pdata.activeAnimation && pdata.currentMovementAnim) {
+            // Animation was cleared (attack finished), restore default animation
+            pdata.activeAnimation = `player.${pdata.currentDefaultAnimation}`;
+            pdata.animationFrame = 0;
+            const defaultSeq = animationSequences[pdata.activeAnimation];
+            if (defaultSeq && defaultSeq.blocks.length > 0) {
+                pdata.animationTimer = defaultSeq.blocks[0].duration;
+            }
         }
     }
 
@@ -532,8 +532,8 @@ function createAttack(type) {
 
     if (type === "ground_punch") {
         a = Sprite.withSensor(
-            pdata.facingRight ? player.x + 80 : player.x - 80,
-            player.y,
+            player.facingRight ? player.x + 80 : player.x - 80,
+            player.y + 40,
             100, // CONSTANT(s)
             60
         );
@@ -543,7 +543,7 @@ function createAttack(type) {
     else if (type === "air_forward") {
         a = Sprite.withSensor(
             player.x + (player.facingRight ? 100 : -100),
-            player.y,
+            player.y + 40,
             120, // CONSTANT(s)
             40
         );
