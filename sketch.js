@@ -369,12 +369,8 @@ q5.update = function () {
         canvas = superscreen;
         ctx = superCtx;
 
-        ctx.clearRect(0, 0, width, height);
-        
-        push();
-        translate(camera.x, camera.y); // Maintain context matrix coordination
-        updateStartScreen();
-        pop();
+        // ctx.clearRect(0, 0, width, height);
+        updateStartScreen(ctx);
 
         if (isStartScreenDone()) {
             gameState = "playing";
@@ -408,21 +404,9 @@ q5.update = function () {
         superscreen.style.display = "block";
         canvas = superscreen;
         ctx = superCtx;
-
-        ctx.clearRect(0, 0, width, height);
         
-        push();
-        translate(camera.x, camera.y); // Re-align with engine transformation metrics
-
-        push();
-        translate(-camera.x, -camera.y);
-        fill(0);
-        rect(0, 0, width, height);
-        pop();
-        
-        gameOverScreen.draw();
-        gameOverScreen.update();
-        pop();
+        gameOverScreen.draw(ctx);
+        gameOverScreen.update(ctx);
 
         canvas = mainCanvas;
         ctx = mainCtx;
