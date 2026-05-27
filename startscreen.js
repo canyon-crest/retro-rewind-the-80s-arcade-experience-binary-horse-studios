@@ -596,4 +596,4 @@ function drawGlyph(ch, x, y, size, c) {
             }
         }
     }
-}
+} 
