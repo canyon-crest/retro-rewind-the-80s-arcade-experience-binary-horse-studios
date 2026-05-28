@@ -2,6 +2,13 @@ window.exe = _ => eval(_);
 
 await Canvas(1600, 900);
 noSmooth();
+strokeWeight(0);
+
+await document.fonts.load("72px C64");
+
+window.c64Text = {
+	points: await loadImage(textToCroppedDataUri("+10p"))
+};
 
 canvas.style.position = "fixed";
 
@@ -22,7 +29,7 @@ window.onresize = function() {
 window.onresize();
 
 window.GAMESTATE = {
-    key: false,
+    keys: 0,
     timer: 300,
     score: 0,
     ammo: {molotov: 0, beer: 0, bullet: 0}
@@ -31,13 +38,12 @@ window.GAMESTATE = {
 allSprites.everyFrame = {};
 allSprites.autoCull = false;
 
-
 camera.zoom = 1;
 camera.x = 0;
 camera.y = height / 2;
 world.gravity.y = 37;
 
-import { createProjectile, handleProjectileHit } from "./items.js";
+import { createProjectile, handleProjectileHit, gotItem } from "./items.js";
 
 let pdata = {
     attackCooldown: 0,
@@ -59,7 +65,7 @@ let jumpSensor;
 
 let ground;
 let walls = [];
-let doors = [];
+let doors;
 
 { // create environmental objects
     window.worldAnchor = Sprite.withSensor(0, 0, 37, 37, "static");
@@ -79,23 +85,28 @@ let doors = [];
 	crates.width = 100;
 	crates.height = 100;
 	crates.img = await loadImage("./crate.png");
-	crates.img.resize(200, 200);
+	crates.img.scale = 2 * crates.width / crates.img.width;
 	crates.hp = 67;
 
 	walls[0] = new terrain.Sprite(width * -0.5, surfaceY * 0.5, 74, surfaceY);
 
+	doors = new Group(terrain);
+	doors.width = 67;
+	doors.height = doorHeight;
+	doors.color = "#bababa";
 
     for (let number = 0; number < 8; number++) {
 		const i = number + 1;
 
 		const rightEdge = (i * 6) * height - width * 0.5;
-		
-        walls[i] = new terrain.Sprite(rightEdge, (surfaceY - doorHeight) * 0.5, 74, surfaceY - doorHeight);
-        doors[number] = new terrain.Sprite(rightEdge, surfaceY - doorHeight * 0.5, 67, doorHeight);
-        doors[number].color = "#bababa";
 
-		for (let j = 0; j < 5; j++) {
-			new crates.Sprite(random(rightEdge - 6 * height + 500, rightEdge - 500), random(0, surfaceY * 0.5));
+        walls[i] = new terrain.Sprite(rightEdge, (surfaceY - doorHeight) * 0.5, 74, surfaceY - doorHeight);
+		
+		new doors.Sprite(rightEdge, surfaceY - doorHeight * 0.5);
+
+		for (let j = 0; j < 8; j++) {
+			// create a crate somewhere in this room; if it's its first crate, it has a key; if it's its second or third, it has ammo; if it's its fourth or fifth, it has extra points
+			new crates.Sprite(random(rightEdge - 6 * height + 500, rightEdge - 500), random(0, surfaceY * 0.5)).hasItem = (j === 0 ? "key" : j < 3 ? "ammo" : j < 555 ? "bonus" : false);
 		}
     }
 
@@ -106,6 +117,8 @@ let doors = [];
     player.rotationLock = true;
     player.friction = 0;
     player.bounciness = 0;
+	
+	doors.collides(player, unlockDoor);
 
 	jumpSensor = Sprite.withSensor(0, player.y + player.height * 0.5 + 10, 60, 10);
 
@@ -257,7 +270,7 @@ q5.update = function () {
 q5.postProcess = function() {
 	fill("white");
 	textSize(24);
-	text("M 0 B 0 X 0   |   SCORE 6767   |   TIME 123   |   \u{1f511}", width * -0.5, height * -0.5 + 24);
+	text(`M ${GAMESTATE.ammo.molotov} B ${GAMESTATE.ammo.beer} X ${GAMESTATE.ammo.bullet}   |   SCORE ${GAMESTATE.score}   |   TIME ${GAMESTATE.timer}   |   ${"\u{1f511}".repeat(GAMESTATE.keys)}`, width * -0.5, height * -0.5 + 24);
 }
 
 function computeStateTransitions(pdata, actions) {
@@ -377,8 +390,20 @@ function handleHit(attack, target) {
     }
 
     if (targetHasHP && target.hp < 0) {
+		if (crates.includes(target)) {
+			if (target.hasItem) gotItem(target.hasItem, target.x, target.y);
+		}
+		
         // future: death animation
         // future: can die twice?
         target.delete();
     }
+}
+
+function unlockDoor(door) {
+	if (GAMESTATE.keys) {
+		GAMESTATE.keys--;
+		door.delete();
+		// future: unlock sfx/animation
+	}
 }
