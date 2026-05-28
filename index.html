@@ -34,14 +34,25 @@
         window.Q5.disableWebGPU = true;
     </script>
 
+    <!-- q5play is PINNED to 4.2.2 via jsDelivr's immutable npm version URL — the
+         version verified working with the camera-global bridge in sketch.js.
+         q5play was previously loaded unpinned from q5play.org ("latest"); an
+         upstream update that changed which globals it exposes silently broke boot
+         ("camera is not defined"). jsDelivr's per-version URLs never change, so a
+         future q5play release can't regress us. NOTE: q5play.org has NO versioned
+         paths (it soft-200s an HTML redirect for unknown paths), which is why we
+         use jsDelivr here. q5 core stays on q5js.org's built bundle (the regression
+         was in q5play, not q5; and q5's npm build doesn't register q5play's addon).
+         Box2D stays on q5play.org — it's q5play's own matched physics build (not in
+         the npm package) and wasn't part of the regression. -->
     <script type="module" src="https://q5js.org/q5.js"></script>
     <script type="importmap">
         { "imports": {
             "box2d3-wasm": "https://q5play.org/Box2D.deluxe.mjs"
         } }
     </script>
-    <script type="module" src="https://q5play.org/q5play.js"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/q5play@4.2.2/q5play.js"></script>
 
-    <script type="module" src="sketch.js"></script>
+    <script type="module" src="sketch.js?v=2"></script>
 </body>
 </html>

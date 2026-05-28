@@ -543,7 +543,7 @@ const FONT = {
     '/':["00001","00010","00010","00100","01000","01000","10000"],
 };
 
-function drawPixelText(str, x, y, size, fillC, outlineColor, shadowColor, anchor) {
+export function drawPixelText(str, x, y, size, fillC, outlineColor, shadowColor, anchor) {
     size = size || 1;
     anchor = anchor || "center";
     const charW = 5 * size;

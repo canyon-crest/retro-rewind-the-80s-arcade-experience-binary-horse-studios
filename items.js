@@ -35,7 +35,8 @@ export function createProjectile(sender, projectileType) {
         }};
     }
 
-    proj.debug = true;
+    // NOTE: don't set proj.debug — q5play 4.x's debug draw calls a removed
+    // `_doFill` and throws every frame, crashing gameplay.
     return proj;
 }
 
