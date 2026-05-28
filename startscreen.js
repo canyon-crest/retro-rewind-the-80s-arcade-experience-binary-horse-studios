@@ -1,5 +1,33 @@
 // startscreen.js — The Cuban Misfire title + diving + loading sequence.
-// Renders into the existing 1600×900 q5 canvas, scaled from a 320×240 internal grid.
+
+////////////////////////////////
+
+const ctx = document.getElementById("supercanvas").getContext("2d");
+
+function fill(c) {
+    if (typeof c === "string") {
+        ctx.fillStyle = c;
+    } else if (c.levels) {
+        const [r, g, b, a] = c.levels;
+        ctx.fillStyle = `rgba(${r},${g},${b},${a / 255})`;
+    } else {
+        ctx.fillStyle = c.toString();
+    }
+}
+
+function rect(x, y, w, h) {
+    ctx.fillRect(x, y, w, h);
+}
+
+function translate(x, y) {
+    ctx.translate(x, y);
+}
+
+function scale(x, y) {
+    ctx.scale(x, y ?? x);
+}
+
+////////////////////////////////
 
 const SS_W = 320, SS_H = 240;
 const WATER_LEVEL = 130;
@@ -133,12 +161,8 @@ export function handleStartScreenClick(mx, my) {
 }
 
 export function updateStartScreen() {
-    push();
-    noSmooth();
-    noStroke();
-
-    // Offset everything by negative camera position so world (0,0) appears at screen top-left
-    translate(-camera.x, -camera.y);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
 
     // Fill the entire visible canvas with black
     fill(0);
@@ -157,7 +181,7 @@ export function updateStartScreen() {
     updatePhase();
     frameCt++;
 
-    pop();
+    ctx.restore();
 }
 // ============================================================
 // World scene
