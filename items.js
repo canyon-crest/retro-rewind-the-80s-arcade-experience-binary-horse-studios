@@ -29,7 +29,7 @@ export function createProjectile(sender, projectileType) {
         proj.vel.x = dir * 50;
         proj.vel.y = -2;
 
-        proj.everyFrame[Math.max(-1, ...Object.keys(proj.everyFrame)) + 1] = {duration: Infinity, f: function(self) {
+        proj.everyFrame["slow-fall"] = {duration: Infinity, f: function(self) {
             self.bearing = 90;
             self.applyForceScaled(world.gravity.y * -0.6);
         }};
@@ -102,4 +102,57 @@ export function handleProjectileHit(proj, target, hittables) {
             }
         }
     }
+}
+
+export function gotItem(item, x, y) {
+    const itemSprite = Sprite.withSensor(x, y, 50, 50);
+    itemSprite.gravity = false;
+    itemSprite.vel.y = -10;
+
+    if (item === "key") {
+        itemSprite.img = "\u{1f511}";
+        itemSprite.item = "key";
+    }
+    else if (item === "ammo") {
+        switch (Math.floor(Math.random() * 10)) {
+            case 0:
+            case 1:
+                itemSprite.img = "🍾";
+                itemSprite.item = "molotov";
+                break;
+            case 2:
+            case 3:
+            case 4:
+            case 5:
+            case 6:
+                itemSprite.img = "🍺";
+                itemSprite.item = "beer";
+                break;
+            case 7:
+            case 8:
+            case 9:
+                itemSprite.img = "X";
+                itemSprite.item = "bullet";
+        }
+    }
+    else if (item === "bonus") {
+        itemSprite.img = c64Text.points;
+        itemSprite.item = "bonus";
+    }
+    
+    itemSprite.everyFrame["rise"] = {duration: Infinity, f: function(self) {
+        self.bearing = 90;
+        self.applyForceScaled(world.gravity.y * -0.8);
+
+        if (itemSprite.life === 1) {
+            if (itemSprite.item === "key") GAMESTATE.keys++;
+            else if (itemSprite.item === "molotov") GAMESTATE.ammo.molotov += 3;
+            else if (itemSprite.item === "beer") GAMESTATE.ammo.beer += 5;
+            else if (itemSprite.item === "bullet") GAMESTATE.ammo.bullet += 8;
+            else if (itemSprite.item === "bonus") GAMESTATE.score += 10;
+                
+            // future: play a frame-by-frame "pop" animation
+        }
+    }};
+    itemSprite.life = 30;
 }
