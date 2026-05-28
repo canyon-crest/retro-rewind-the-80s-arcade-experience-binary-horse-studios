@@ -133,20 +133,23 @@ function createAnimator(sprite, frames, sequences) {
 // Frame extraction
 // ============================================================
 async function extractFrameAsImage(sheetImage, srcX, srcY, frameWidth, frameHeight) {
+    // Upscale on the canvas with imageSmoothing OFF so the soldier stays crisp
+    // pixel art (bilinear blurring used to soften every edge of him).
+    const scale = 20 / 3;
+    const outW = Math.round(frameWidth  * scale);
+    const outH = Math.round(frameHeight * scale);
     const c = document.createElement("canvas");
-    c.width = frameWidth;
-    c.height = frameHeight;
+    c.width = outW; c.height = outH;
     const ctx = c.getContext("2d");
     if (!ctx) return null;
+    ctx.imageSmoothingEnabled = false;
     try {
-        ctx.drawImage(sheetImage, srcX, srcY, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
+        ctx.drawImage(sheetImage, srcX, srcY, frameWidth, frameHeight, 0, 0, outW, outH);
     } catch (e) {
         console.warn("Failed to extract frame:", e);
         return null;
     }
-    const img = await loadImage(c.toDataURL());
-    img.resize(frameWidth * 20/3, frameHeight * 20/3);
-    return img;
+    return await loadImage(c.toDataURL());
 }
 
 async function buildAnimationFrames(sheets, sequences) {
@@ -186,26 +189,44 @@ const animationSequences = {
         { sheet: "usRun", framePos: { x: 0, y: 1 }, duration: 6 },
         { sheet: "usRun", framePos: { x: 0, y: 0 }, duration: 10 },
     ]},
-    "player.ground_punch.startup":  { blocks: [{ sheet: "usRun",  framePos: {x:1,y:0}, duration: 5 }] },
-    "player.air_forward.startup":   { blocks: [{ sheet: "usRun",  framePos: {x:2,y:0}, duration: 5 }] },
+    // Multi-frame attack animations — every attack cycles through several
+    // poses (wind-up → release → recovery) so it reads as a real motion, not
+    // a single jank frame. All frames come from the existing player sheets.
+    "player.ground_punch.startup": { blocks: [
+        { sheet: "usRun", framePos: {x:1,y:0}, duration: 3 },   // step in
+        { sheet: "usRun", framePos: {x:2,y:0}, duration: 4 },   // jab extended
+        { sheet: "usRun", framePos: {x:1,y:0}, duration: 3 },   // pull back
+    ]},
+    "player.air_forward.startup": { blocks: [
+        { sheet: "usRun", framePos: {x:2,y:0}, duration: 3 },   // arm forward
+        { sheet: "usRun", framePos: {x:1,y:1}, duration: 3 },   // strike
+        { sheet: "usRun", framePos: {x:2,y:0}, duration: 3 },   // recover
+    ]},
     "player.air_explosion.startup": { blocks: [
-        { sheet: "usFire", framePos: {x:3,y:0}, duration: 8 },
-        { sheet: "usFire", framePos: {x:4,y:0}, duration: 7 },
+        { sheet: "usFire", framePos: {x:3,y:0}, duration: 4 },   // charge
+        { sheet: "usFire", framePos: {x:4,y:0}, duration: 5 },   // detonate
+        { sheet: "usFire", framePos: {x:3,y:0}, duration: 4 },   // recoil
     ]},
     "player.molotov_throw.startup": { blocks: [
-        { sheet: "usRun", framePos: {x:1,y:0}, duration: 2 },
-        { sheet: "usRun", framePos: {x:2,y:0}, duration: 5 },
-        { sheet: "usRun", framePos: {x:1,y:1}, duration: 5 },
+        { sheet: "usRun", framePos: {x:1,y:0}, duration: 3 },   // reach for belt
+        { sheet: "usRun", framePos: {x:2,y:0}, duration: 3 },   // grab bottle
+        { sheet: "usRun", framePos: {x:1,y:1}, duration: 4 },   // wind back
+        { sheet: "usRun", framePos: {x:2,y:1}, duration: 4 },   // swing through
+        { sheet: "usRun", framePos: {x:0,y:1}, duration: 4 },   // follow-through
     ]},
     "player.beer_throw.startup": { blocks: [
-        { sheet: "usRun", framePos: {x:1,y:0}, duration: 2 },
-        { sheet: "usRun", framePos: {x:2,y:0}, duration: 5 },
-        { sheet: "usRun", framePos: {x:1,y:1}, duration: 5 },
+        { sheet: "usRun", framePos: {x:1,y:0}, duration: 3 },
+        { sheet: "usRun", framePos: {x:2,y:0}, duration: 3 },
+        { sheet: "usRun", framePos: {x:1,y:1}, duration: 4 },
+        { sheet: "usRun", framePos: {x:2,y:1}, duration: 4 },
+        { sheet: "usRun", framePos: {x:0,y:1}, duration: 4 },
     ]},
     "player.bullet.startup": { blocks: [
-        { sheet: "usFire", framePos: {x:0,y:2}, duration: 2 },
-        { sheet: "usFire", framePos: {x:2,y:0}, duration: 2 },
-        { sheet: "usFire", framePos: {x:0,y:2}, duration: 2 },
+        { sheet: "usFire", framePos: {x:0,y:2}, duration: 2 },   // shoulder rifle
+        { sheet: "usFire", framePos: {x:2,y:0}, duration: 3 },   // sight target
+        { sheet: "usFire", framePos: {x:3,y:0}, duration: 3 },   // fire (muzzle)
+        { sheet: "usFire", framePos: {x:4,y:0}, duration: 3 },   // recoil
+        { sheet: "usFire", framePos: {x:0,y:2}, duration: 2 },   // lower rifle
     ]},
 };
 
@@ -220,14 +241,15 @@ const corridorBG = await loadImage("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg
 // trick extractFrameAsImage() uses for the player sprite sheets.
 // ============================================================
 async function loadGameImage(src, w, h) {
+    // Upscale the PNG to (w,h) on a canvas with imageSmoothing OFF so the
+    // resulting q5 image is crisp pixel art instead of a blurry bilinear blob.
     const dom = await loadPNG(encodeURI(src));
     const c = document.createElement("canvas");
-    c.width = dom.naturalWidth;
-    c.height = dom.naturalHeight;
-    c.getContext("2d").drawImage(dom, 0, 0);
-    const img = await loadImage(c.toDataURL());
-    img.resize(w, h);
-    return img;
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(dom, 0, 0, dom.naturalWidth, dom.naturalHeight, 0, 0, w, h);
+    return await loadImage(c.toDataURL());
 }
 
 // Same as loadGameImage but also measures how many transparent rows sit at the
@@ -280,6 +302,345 @@ async function makeSquareImg(d, color, edgeColor) {
     return await loadImage(c.toDataURL());
 }
 
+// ------------------------------------------------------------
+// Attack & prop art — all generated on a scratch canvas with
+// imageSmoothing OFF so they keep that crisp 8-bit edge.
+// ------------------------------------------------------------
+function freshCanvas(w, h) {
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    return { c, ctx };
+}
+
+// Brass-cased rifle bullet — replaces the player's '▪️' emoji.
+async function makeRifleBulletImg(w, h) {
+    const { c, ctx } = freshCanvas(w, h);
+    ctx.strokeStyle = "#1a0c00"; ctx.lineWidth = 2;
+    // brass casing body
+    ctx.fillStyle = "#a8702a";
+    ctx.fillRect(2, h * 0.25, w * 0.55, h * 0.5);
+    ctx.fillStyle = "#f0d68a";  // top highlight
+    ctx.fillRect(2, h * 0.3, w * 0.55, h * 0.12);
+    ctx.strokeRect(2, h * 0.25, w * 0.55, h * 0.5);
+    // lead tip (triangle pointing right)
+    ctx.fillStyle = "#cfcfcf";
+    ctx.beginPath();
+    ctx.moveTo(w * 0.57, h * 0.18);
+    ctx.lineTo(w - 2,    h / 2);
+    ctx.lineTo(w * 0.57, h * 0.82);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // tip highlight
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(w * 0.6, h * 0.35, w * 0.2, 2);
+    return await loadImage(c.toDataURL());
+}
+
+// Soviet-style longneck beer bottle — green glass, red foil cap, yellow label.
+async function makeBeerBottleImg(w, h) {
+    const { c, ctx } = freshCanvas(w, h);
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 2;
+    // body
+    const bx = w * 0.18, by = h * 0.32, bw = w * 0.64, bh = h * 0.62;
+    ctx.fillStyle = "#1f5a26";
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = "#3aa040";    // left highlight
+    ctx.fillRect(bx + 2, by + 3, 5, bh - 8);
+    ctx.strokeRect(bx, by, bw, bh);
+    // shoulder
+    ctx.fillStyle = "#1f5a26";
+    ctx.beginPath();
+    ctx.moveTo(bx,    by + 3);
+    ctx.lineTo(bx + bw, by + 3);
+    ctx.lineTo(bx + bw * 0.78, by - 8);
+    ctx.lineTo(bx + bw * 0.22, by - 8);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // neck
+    ctx.fillStyle = "#1f5a26";
+    ctx.fillRect(w * 0.38, h * 0.14, w * 0.24, h * 0.16);
+    ctx.strokeRect(w * 0.38, h * 0.14, w * 0.24, h * 0.16);
+    // red foil cap
+    ctx.fillStyle = "#c8242a";
+    ctx.fillRect(w * 0.36, h * 0.05, w * 0.28, h * 0.11);
+    ctx.strokeRect(w * 0.36, h * 0.05, w * 0.28, h * 0.11);
+    ctx.fillStyle = "#ff5a60";    // cap highlight
+    ctx.fillRect(w * 0.38, h * 0.06, 4, h * 0.08);
+    // yellow paper label with red bar (Soviet vibe)
+    ctx.fillStyle = "#ffe066";
+    ctx.fillRect(bx + 2, by + bh * 0.28, bw - 4, bh * 0.32);
+    ctx.fillStyle = "#c8242a";
+    ctx.fillRect(bx + 2, by + bh * 0.34, bw - 4, 4);
+    ctx.strokeRect(bx + 2, by + bh * 0.28, bw - 4, bh * 0.32);
+    return await loadImage(c.toDataURL());
+}
+
+// Molotov cocktail — amber fluid, burning rag wick.
+async function makeMolotovImg(w, h) {
+    const { c, ctx } = freshCanvas(w, h);
+    ctx.strokeStyle = "#1a0c00"; ctx.lineWidth = 2;
+    // body with amber fluid
+    const bx = w * 0.18, by = h * 0.36, bw = w * 0.64, bh = h * 0.55;
+    ctx.fillStyle = "#c8852a";
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = "#ffce62";
+    ctx.fillRect(bx + 2, by + 3, 5, bh - 8);
+    ctx.strokeRect(bx, by, bw, bh);
+    // neck
+    ctx.fillStyle = "#9a6620";
+    ctx.fillRect(w * 0.38, h * 0.22, w * 0.24, h * 0.18);
+    ctx.strokeRect(w * 0.38, h * 0.22, w * 0.24, h * 0.18);
+    // rag wick (dirty white cloth)
+    ctx.fillStyle = "#e8d8a0";
+    ctx.fillRect(w * 0.42, h * 0.1, w * 0.16, h * 0.16);
+    ctx.strokeRect(w * 0.42, h * 0.1, w * 0.16, h * 0.16);
+    // flame above the rag
+    ctx.fillStyle = "#ff5a1a";
+    ctx.beginPath(); ctx.arc(w * 0.5, h * 0.08, w * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ffd24a";
+    ctx.beginPath(); ctx.arc(w * 0.5, h * 0.08, w * 0.08, 0, Math.PI * 2); ctx.fill();
+    return await loadImage(c.toDataURL());
+}
+
+// Molotov FIRE BURST — big radial flame with licks and a white-hot core.
+async function makeMolotovBlastImg(d) {
+    const { c, ctx } = freshCanvas(d, d);
+    // outer dark-red glow
+    ctx.fillStyle = "#7a1208";
+    ctx.beginPath(); ctx.arc(d/2, d/2, d/2, 0, Math.PI*2); ctx.fill();
+    // orange
+    ctx.fillStyle = "#ff5a1a";
+    ctx.beginPath(); ctx.arc(d/2, d/2, d * 0.42, 0, Math.PI*2); ctx.fill();
+    // yellow
+    ctx.fillStyle = "#ffd24a";
+    ctx.beginPath(); ctx.arc(d/2, d/2, d * 0.28, 0, Math.PI*2); ctx.fill();
+    // white-hot core
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(d/2, d/2, d * 0.1, 0, Math.PI*2); ctx.fill();
+    // flame licks around the rim
+    ctx.fillStyle = "#ff9a3a";
+    for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + 0.31;
+        ctx.beginPath();
+        ctx.arc(d/2 + Math.cos(a) * d * 0.43, d/2 + Math.sin(a) * d * 0.43, d * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    return await loadImage(c.toDataURL());
+}
+
+// Cartoon "POW!" starburst for melee hits — drawn at the contact point so the
+// invisible-fist swing actually reads as a punch.
+async function makePunchBurstImg(w, h) {
+    const { c, ctx } = freshCanvas(w, h);
+    const cx = w/2, cy = h/2;
+    const outerR = Math.min(w, h) / 2 - 4;
+    const innerR = outerR * 0.55;
+    const spikes = 10;
+    ctx.fillStyle = "#ffe066";
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+        const r = (i % 2 === 0) ? outerR : innerR;
+        const a = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = "#000"; ctx.stroke();
+    ctx.fillStyle = "#ff9a3a";
+    ctx.beginPath(); ctx.arc(cx, cy, innerR * 0.7, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#ffe066";
+    ctx.beginPath(); ctx.arc(cx, cy, innerR * 0.4, 0, Math.PI*2); ctx.fill();
+    return await loadImage(c.toDataURL());
+}
+
+// Concentric shockwave rings for the omnidirectional air-explosion attack.
+async function makeAirExplosionImg(d) {
+    const { c, ctx } = freshCanvas(d, d);
+    const cols = ["#ffffff", "#ffe066", "#ff9a3a", "#ff5a1a", "#7a1208"];
+    for (let i = 0; i < cols.length; i++) {
+        ctx.strokeStyle = cols[i]; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(d/2, d/2, d/2 - 4 - i * 8, 0, Math.PI * 2); ctx.stroke();
+    }
+    return await loadImage(c.toDataURL());
+}
+
+// Wooden command desk for the level-5 ending scene.
+async function makeDeskImg(w, h) {
+    const { c, ctx } = freshCanvas(w, h);
+    ctx.fillStyle = "#7a4a20"; ctx.fillRect(0, 0, w, h * 0.22);            // top plank
+    ctx.fillStyle = "#5a3414"; ctx.fillRect(0, h * 0.22 - 5, w, 5);        // lip shadow
+    ctx.fillStyle = "#a06a30"; ctx.fillRect(0, 0, w, 4);                   // top highlight
+    ctx.fillStyle = "#4a2a14";
+    ctx.fillRect(8, h * 0.22, 16, h - h * 0.22);                            // left leg
+    ctx.fillRect(w - 24, h * 0.22, 16, h - h * 0.22);                       // right leg
+    ctx.fillStyle = "#3a1f0c"; ctx.fillRect(28, h * 0.22 + 6, w - 56, 10); // panel
+    return await loadImage(c.toDataURL());
+}
+
+// Big red 8-bit launch-abort button — dome on a riveted metal base.
+async function makeButtonImg(w, h) {
+    const { c, ctx } = freshCanvas(w, h);
+    ctx.fillStyle = "#3a3a4a"; ctx.fillRect(w * 0.08, h * 0.55, w * 0.84, h * 0.4);
+    ctx.fillStyle = "#5a5a72"; ctx.fillRect(w * 0.08, h * 0.55, w * 0.84, 4);
+    ctx.fillStyle = "#1a1a26"; ctx.fillRect(w * 0.08, h * 0.55 + h * 0.4 - 4, w * 0.84, 4);
+    ctx.fillStyle = "#ffe066";
+    ctx.beginPath(); ctx.arc(w * 0.18, h * 0.85, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(w * 0.82, h * 0.85, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#9a0810";
+    ctx.beginPath(); ctx.ellipse(w / 2, h * 0.5, w * 0.4, h * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#d8242a";
+    ctx.beginPath(); ctx.ellipse(w / 2, h * 0.48, w * 0.35, h * 0.27, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ff8a90";
+    ctx.beginPath(); ctx.ellipse(w * 0.42, h * 0.38, w * 0.1, h * 0.06, 0, 0, Math.PI * 2); ctx.fill();
+    return await loadImage(c.toDataURL());
+}
+
+// 8-bit pixel-art flame (Mario-style). Drawn block-by-block from a bitmap so
+// every pixel is a chunky square — no smooth curves. The base sits on the
+// image's bottom edge so a sprite placed at floor level reads as fire ON the
+// ground. Palette: dark red → orange → yellow → white-hot core.
+const FIRE_BMP = [
+    "0001111000",
+    "0012222100",
+    "0123333210",
+    "0123433210",
+    "1234443321",
+    "1234444321",
+    "1234443321",
+    "1233333321",
+    "1122322211",
+    "0112221110",
+];
+const FIRE_PALETTE = [null, "#7a0810", "#ff5a1a", "#ffd24a", "#ffffff"];
+
+async function makePixelArtImg(bitmap, palette, scale) {
+    const srcH = bitmap.length;
+    const srcW = bitmap[0].length;
+    const c = document.createElement("canvas");
+    c.width = srcW * scale;
+    c.height = srcH * scale;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    for (let r = 0; r < srcH; r++) {
+        for (let col = 0; col < srcW; col++) {
+            const idx = bitmap[r].charCodeAt(col) - 48;       // '0'..'9' -> 0..9
+            if (idx <= 0 || idx >= palette.length) continue;
+            ctx.fillStyle = palette[idx];
+            ctx.fillRect(col * scale, r * scale, scale, scale);
+        }
+    }
+    return await loadImage(c.toDataURL());
+}
+
+async function makeFireImg(_w, _h) {
+    // Chunky 10×10 source pixels upscaled to 10 px each → 100×100 final image.
+    return await makePixelArtImg(FIRE_BMP, FIRE_PALETTE, 10);
+}
+
+// Soviet-era bunker door — full-corridor height, deep red, gold star &
+// hammer-and-sickle, gold bolts and handle. Side-view 8-bit feel.
+function drawStar(ctx, cx, cy, r, color, outline) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+        const rad = (i % 2 === 0) ? r : r * 0.48;
+        const x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+    if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = 2; ctx.stroke(); }
+}
+function drawHammerSickle(ctx, cx, cy, size) {
+    ctx.strokeStyle = "#ffe066"; ctx.lineWidth = 4; ctx.lineCap = "round";
+    // sickle (arc)
+    ctx.beginPath();
+    ctx.arc(cx - size * 0.15, cy, size * 0.42, Math.PI * 0.45, Math.PI * 1.85);
+    ctx.stroke();
+    // hammer handle (diagonal)
+    ctx.beginPath();
+    ctx.moveTo(cx - size * 0.32, cy + size * 0.42);
+    ctx.lineTo(cx + size * 0.36, cy - size * 0.32);
+    ctx.stroke();
+    // hammer head (rectangle perpendicular to handle tip)
+    ctx.fillStyle = "#ffe066";
+    ctx.save();
+    ctx.translate(cx + size * 0.36, cy - size * 0.32);
+    ctx.rotate(-Math.PI / 4 + Math.PI / 2);
+    ctx.fillRect(-size * 0.22, -size * 0.1, size * 0.42, size * 0.18);
+    ctx.restore();
+}
+async function makeDoorImg(w, h) {
+    const { c, ctx } = freshCanvas(w, h);
+
+    // outermost dark border (riveted frame)
+    ctx.fillStyle = "#0a0606"; ctx.fillRect(0, 0, w, h);
+    // riveted metal jamb
+    ctx.fillStyle = "#3a1a14"; ctx.fillRect(6, 6, w - 12, h - 12);
+
+    // door panel proper — deep Soviet red
+    const dx = 14, dy = 14, dw = w - 28, dh = h - 28;
+    ctx.fillStyle = "#a01018"; ctx.fillRect(dx, dy, dw, dh);
+    // darker shadow on the right and bottom edges
+    ctx.fillStyle = "#660810"; ctx.fillRect(dx + dw - 10, dy, 10, dh);
+    ctx.fillStyle = "#660810"; ctx.fillRect(dx, dy + dh - 10, dw, 10);
+    // top highlight
+    ctx.fillStyle = "#c83040"; ctx.fillRect(dx, dy, dw, 6);
+    ctx.fillStyle = "#c83040"; ctx.fillRect(dx, dy, 6, dh);
+
+    // top band with gold trim — frames the star
+    ctx.fillStyle = "#7a0810"; ctx.fillRect(dx + 8, dy + 18, dw - 16, h * 0.18);
+    ctx.fillStyle = "#ffe066"; ctx.fillRect(dx + 8, dy + 18, dw - 16, 3);
+    ctx.fillStyle = "#ffe066"; ctx.fillRect(dx + 8, dy + 18 + h * 0.18 - 3, dw - 16, 3);
+
+    // central gold star
+    drawStar(ctx, w / 2, dy + 18 + h * 0.09, Math.min(w * 0.16, 30), "#ffe066", "#000");
+
+    // hammer & sickle (smaller, mid-upper section)
+    drawHammerSickle(ctx, w / 2, h * 0.34, Math.min(w * 0.36, 70));
+
+    // mid horizontal divider
+    ctx.fillStyle = "#660810";
+    ctx.fillRect(dx + 8, h * 0.48, dw - 16, 4);
+    ctx.fillStyle = "#ffe066";
+    ctx.fillRect(dx + 8, h * 0.48 - 2, dw - 16, 2);
+
+    // EXIT plaque (red on gold)
+    ctx.fillStyle = "#ffe066";
+    ctx.fillRect(dx + dw * 0.18, h * 0.55, dw * 0.64, h * 0.07);
+    ctx.fillStyle = "#0a0606";
+    ctx.fillRect(dx + dw * 0.18, h * 0.55, dw * 0.64, 3);
+    ctx.fillRect(dx + dw * 0.18, h * 0.55 + h * 0.07 - 3, dw * 0.64, 3);
+    ctx.fillStyle = "#7a0810";
+    ctx.font = `bold ${Math.floor(h * 0.045)}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("ВЫХОД", w / 2, h * 0.585);
+
+    // handle (gold vertical bar)
+    ctx.fillStyle = "#ffe066";
+    ctx.fillRect(w * 0.7, h * 0.68, 9, h * 0.14);
+    ctx.strokeStyle = "#0a0606"; ctx.lineWidth = 2;
+    ctx.strokeRect(w * 0.7, h * 0.68, 9, h * 0.14);
+    // keyhole
+    ctx.fillStyle = "#0a0606";
+    ctx.beginPath(); ctx.arc(w * 0.8, h * 0.74, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(w * 0.8 - 3, h * 0.74, 6, 16);
+
+    // gold bolts in the corners
+    const bolt = (bx, by) => {
+        ctx.fillStyle = "#ffe066"; ctx.beginPath(); ctx.arc(bx, by, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#0a0606"; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = "#a07028"; ctx.fillRect(bx - 4, by - 1, 8, 2);   // slot
+    };
+    bolt(dx + 14, dy + 14); bolt(dx + dw - 14, dy + 14);
+    bolt(dx + 14, dy + dh - 14); bolt(dx + dw - 14, dy + dh - 14);
+    bolt(dx + 14, dy + dh / 2); bolt(dx + dw - 14, dy + dh / 2);
+
+    return await loadImage(c.toDataURL());
+}
+
 // Sized to read at roughly the player's scale so attacks (especially the
 // flat bullet, which travels at ~player chest height) actually intersect them.
 const CRATE_W = 150, CRATE_H = 170;
@@ -313,6 +674,40 @@ const keyImg = await loadGameImage("./key.png", KEY_W, KEY_H);
 const DEBRIS_COLORS = ["#8a5a2b", "#6b4423", "#a9712f"];
 const turretShotImg = await makeCircleImg(52, "#fff1a8", "#ff5a1a");  // glowing enemy shell
 const debrisImgs = await Promise.all(DEBRIS_COLORS.map((col) => makeSquareImg(18, col, "#241405")));
+
+// Attack & prop sprites.
+const rifleBulletImg   = await makeRifleBulletImg(60, 26);     // player's rifle round
+const beerBottleImg    = await makeBeerBottleImg(48, 84);      // Soviet beer bottle
+const molotovImg       = await makeMolotovImg(48, 90);         // molotov w/ burning rag
+const molotovBlastImg  = await makeMolotovBlastImg(320);       // BIG fire burst (replaces 💥)
+const punchBurstImg    = await makePunchBurstImg(120, 90);     // melee POW! starburst
+const airExplosionImg  = await makeAirExplosionImg(260);       // omnidirectional shockwave
+// Soviet exit door — wide enough to dominate the whole right side, and full
+// SCREEN height so it covers everything top to bottom (incl. the lower exit
+// beneath the surface line).
+const SOVIET_DOOR_W = 500;
+const SOVIET_DOOR_H = height;
+const doorImg = await makeDoorImg(SOVIET_DOOR_W, SOVIET_DOOR_H);
+const fireSpriteImg    = await makeFireImg(96, 110);            // ground-fire patch (molotov)
+const deskImg          = await makeDeskImg(320, 170);           // big command desk
+const buttonImg        = await makeButtonImg(160, 130);          // big red launch-abort button
+
+// Crate art also has invisible padding at the bottom that makes it look like
+// it's floating — bumped again because they STILL look like they're floating.
+const CRATE_FLOOR_NUDGE = 60;
+
+// Expose the generated art so items.js (loaded as a module) can grab it from
+// `window` rather than needing its own import.
+window.rifleBulletImg  = rifleBulletImg;
+window.beerBottleImg   = beerBottleImg;
+window.molotovImg      = molotovImg;
+window.molotovBlastImg = molotovBlastImg;
+window.punchBurstImg   = punchBurstImg;
+window.airExplosionImg = airExplosionImg;
+window.doorImg         = doorImg;
+window.fireSpriteImg   = fireSpriteImg;
+// items.js uses these from `window` for its landing splash + reference data.
+window.spawnDebrisGlobal = (x, y, n) => spawnDebris(x, y, n);
 
 // Damage by attack type for turrets (100 HP, no visible bar). Shooting is
 // the most lethal, thrown bottles second, melee (ground/air) the least.
@@ -353,9 +748,18 @@ let surfaceY;
     ground.visible = false;
 
     for (let i = 0; i <= 12; i++) {
-        walls[i] = new terrain.Sprite((i * 6) * height - width * 0.5, (surfaceY - doorHeight) * 0.5, 74, surfaceY - doorHeight);
-        doors[i] = new terrain.Sprite((i * 6) * height - width * 0.5, surfaceY - doorHeight * 0.5, 67, doorHeight);
+        const wx = (i * 6) * height - width * 0.5;
+        walls[i] = new terrain.Sprite(wx, (surfaceY - doorHeight) * 0.5, 74, surfaceY - doorHeight);
+        doors[i] = new terrain.Sprite(wx, surfaceY - doorHeight * 0.5, 67, doorHeight);
         doors[i].color = "#bababa";
+        if (i === 0) {
+            // Back boundary at x≈-640: still SOLID (the player can't walk off
+            // the back of the level) but FULLY INVISIBLE — opacity 0.
+            walls[i].opacity = 0;
+            doors[i].opacity = 0;
+            walls[i].visible = false;
+            doors[i].visible = false;
+        }
     }
 
     player = new Sprite(0, 300, 100, 180);
@@ -371,6 +775,7 @@ let surfaceY;
     window.crates = new Group();
     window.turrets = new Group();
     window.turretShots = new Group();   // shells fired BY active turrets at the player
+    window.surfaceY = surfaceY;         // expose to items.js for ground-fire placement
 }
 
 // ============================================================
@@ -470,6 +875,22 @@ function resetGameplayPositions() {
     // pre-trip-line state (nothing spawned until the player crosses the line).
     score = 0;
     levelNum = 1;
+    // Re-create any corridor wall/door barriers a prior run tore down past
+    // level 2. Only re-add ones that are missing — don't duplicate existing.
+    {
+        const dh = 200;
+        for (let i = 0; i <= 12; i++) {
+            if (walls[i]) continue;
+            const wx = (i * 6) * height - width * 0.5;
+            walls[i] = new terrain.Sprite(wx, (surfaceY - dh) * 0.5, 74, surfaceY - dh);
+            doors[i] = new terrain.Sprite(wx, surfaceY - dh * 0.5, 67, dh);
+            doors[i].color = "#bababa";
+            if (i === 0) {
+                walls[i].opacity = 0; doors[i].opacity = 0;
+                walls[i].visible = false; doors[i].visible = false;
+            }
+        }
+    }
     resetLevel();
 
     // Camera back to start
@@ -518,7 +939,10 @@ function restartGame() {
 // Input -> intended actions
 // ============================================================
 function computePlayerActions(pdata, player, kb) {
-    const actions = { moveX: 0, facingRight: player.facingRight, jump: false, attack: null };
+    const actions = {
+        moveX: 0, facingRight: player.facingRight, jump: false, attack: null,
+        chargeStart: null, chargeRelease: null,
+    };
 
     if (kb.pressing("left"))       { actions.moveX = -10; actions.facingRight = false; }
     else if (kb.pressing("right")) { actions.moveX =  10; actions.facingRight = true;  }
@@ -533,9 +957,15 @@ function computePlayerActions(pdata, player, kb) {
         else                     actions.attack = "air_explosion";
     }
 
-    if (kb.presses("z") && pdata.attackCooldown === 0) actions.attack = "molotov_throw";
-    if (kb.presses("x") && pdata.attackCooldown === 0) actions.attack = "beer_throw";
     if (kb.presses("c") && pdata.attackCooldown === 0) actions.attack = "bullet";
+
+    // X and Z are CHARGE-throws now: hold-to-aim further, release to throw.
+    // - Press starts the charge (and shows the bottle in the soldier's hand).
+    // - Release fires the projectile with velocity scaled by how long it was held.
+    if (kb.presses("x") && pdata.attackCooldown === 0 && !pdata.chargingThrow) actions.chargeStart = "beer";
+    if (kb.presses("z") && pdata.attackCooldown === 0 && !pdata.chargingThrow) actions.chargeStart = "molotov";
+    if (pdata.chargingThrow === "beer"    && !kb.pressing("x")) actions.chargeRelease = "beer";
+    if (pdata.chargingThrow === "molotov" && !kb.pressing("z")) actions.chargeRelease = "molotov";
 
     return actions;
 }
@@ -584,11 +1014,16 @@ q5.update = function () {
     fill(0);
     rect(0, 0, width, height);
     pop();
-    
+
     gameOverScreen.draw();
     gameOverScreen.update();
     return;
 }
+
+    if (gameState === "ending") {
+        updateEnding();
+        return;
+    }
 };
 
 // ============================================================
@@ -632,12 +1067,45 @@ function updatePlaying() {
 
     if (pdata.attackCooldown > 0) pdata.attackCooldown--;
 
+    // Standard one-shot attacks (punches, bullet) — instant on key-press.
     if (actions.attack && !anim.isOneShotPlaying() && pdata.attackCooldown === 0) {
         pdata.pendingAttack = actions.attack;
         player.color = "pink";
         anim.playOneShot(`player.${actions.attack}.startup`, () => {
             createAttack(pdata.pendingAttack);
             pdata.pendingAttack = null;
+            player.color = "white";
+        });
+    }
+
+    // CHARGE-throw flow for bottles (X / Z): press starts charging + bottle in
+    // hand; while held the charge accumulates; release fires with velocity
+    // scaled by how long the button was held (tap = short toss, hold = long
+    // throw). Auto-fires at max charge (90 frames ~ 1.5s).
+    if (actions.chargeStart) {
+        pdata.chargingThrow = actions.chargeStart;
+        pdata.chargeFrames = 0;
+        spawnChargingBottle(actions.chargeStart);
+    }
+    if (pdata.chargingThrow) {
+        pdata.chargeFrames++;
+        if (pdata.chargeFrames >= 90) {                      // auto-release at full charge
+            actions.chargeRelease = pdata.chargingThrow;
+        }
+    }
+    if (actions.chargeRelease && pdata.chargingThrow) {
+        const charge = Math.min(1, pdata.chargeFrames / 90); // 0 = tap, 1 = full hold
+        const type = pdata.chargingThrow === "beer" ? "beer_throw" : "molotov_throw";
+        pdata.chargingThrow = null;
+        pdata.chargeFrames = 0;
+        if (pdata.carriedBottle) { pdata.carriedBottle.delete(); pdata.carriedBottle = null; }
+        pdata.pendingAttack = type;
+        pdata.pendingCharge = charge;
+        player.color = "pink";
+        anim.playOneShot(`player.${type}.startup`, () => {
+            createAttack(pdata.pendingAttack, pdata.pendingCharge);
+            pdata.pendingAttack = null;
+            pdata.pendingCharge = 0;
             player.color = "white";
         });
     }
@@ -676,6 +1144,144 @@ function updatePlaying() {
 
     // TEMP debug: press K to kill the player and see the gameover screen
     if (kb.presses("k")) pdata.hp = 0;
+}
+
+// ============================================================
+// Ending update — three sub-phases:
+//   1. "approach"   player walks up to the red button, presses SPACE
+//   2. "typewriter" black screen, white 8-bit text letter-by-letter
+//   3. "youwon"     big green "YOU WON", then back to the start screen
+// ============================================================
+function updateEnding() {
+    if (endingPhase === "approach")   return endingApproachUpdate();
+    if (endingPhase === "typewriter") return endingTypewriterUpdate();
+    if (endingPhase === "youwon")     return endingYouWonUpdate();
+}
+
+// Approach phase looks just like normal gameplay — corridor scrolls, player
+// walks, sprites render. Pressing SPACE while close to the red button cuts to
+// the cutscene. No combat / no level logic runs here.
+function endingApproachUpdate() {
+    // Background scroll (same as updatePlaying)
+    const posAlong = camera.x % (height * 6);
+    image(corridorBG, (3 * height - width * 0.5) - posAlong, 0, height * 6, height);
+    if (posAlong < 0) {
+        image(corridorBG, (-3 * height - width * 0.5) - posAlong, 0, height * 6, height);
+    } else if (posAlong > height * 6 - width) {
+        image(corridorBG, (9 * height - width * 0.5) - posAlong, 0, height * 6, height);
+    }
+
+    // Grounded check + simple movement (no jumping needed but kept for consistency)
+    const touchingTerrain = player.colliding(terrain) > 0;
+    if (touchingTerrain || Math.abs(player.vel.y) < 1) pdata.groundedTimer = 8;
+    else if (pdata.groundedTimer > 0) pdata.groundedTimer--;
+
+    if (kb.pressing("left"))       { player.vel.x = -10; player.facingRight = false; }
+    else if (kb.pressing("right")) { player.vel.x =  10; player.facingRight = true;  }
+    else                            { player.vel.x = 0; }
+    if (kb.presses("up") && pdata.groundedTimer > 0) { player.vel.y = -16; pdata.groundedTimer = 0; }
+
+    camera.x += (player.x - camera.x) * 0.67;
+
+    anim.playBase(player.vel.x !== 0 ? "player.run" : "player.idle");
+    anim.update();
+    anim.render();
+
+    // Per-sprite everyFrame (needed for the button/desk + any leftovers).
+    for (let i = 0; i < allSprites.length; i++) {
+        const sprite = allSprites[i];
+        if (!sprite.everyFrame) continue;
+        const entries = Object.entries(sprite.everyFrame);
+        for (let j = 0; j < entries.length; j++) {
+            entries[j][1].f(sprite);
+            entries[j][1].duration--;
+            if (entries[j][1].duration <= 0) { delete sprite.everyFrame[entries[j][0]]; entries.splice(j, 1); j--; }
+        }
+    }
+
+    // SPACE near the button → button slams, screen fades to typewriter cutscene.
+    if (endingButton && kb.presses("space")) {
+        const dx = Math.abs(player.x - endingButton.x);
+        if (dx < 110) {
+            squashScale(endingButton, 0.4, 6);   // button slams down
+            endingPhase = "typewriter";
+            allSprites._autoDraw = false;        // hide gameplay sprites under the cutscene
+            endingTypeFrames = 0;
+            endingTypeChars  = 0;
+            endingPostDoneFrames = 0;
+        }
+    }
+}
+
+// Black screen + Undertale-style typewriter text, one letter every couple frames.
+function endingTypewriterUpdate() {
+    // Full-screen black (origin is screen-center in postdraw / user-update)
+    push();
+    fill(0); noStroke();
+    rect(-width / 2, -height / 2, width, height);
+    pop();
+
+    endingTypeFrames++;
+    if (endingTypeChars < ENDING_MESSAGE.length) {
+        if (endingTypeFrames % TYPEWRITER_FRAMES_PER_CHAR === 0) endingTypeChars++;
+    } else {
+        endingPostDoneFrames++;
+        if (endingPostDoneFrames > 180) {        // 3 s after the last char
+            endingPhase = "youwon";
+            endingPostDoneFrames = 0;
+        }
+    }
+
+    // Skip the cutscene with SPACE / ENTER if the player wants to.
+    if (kb.presses("space") || kb.presses("enter")) {
+        if (endingTypeChars < ENDING_MESSAGE.length) {
+            endingTypeChars = ENDING_MESSAGE.length;  // first press completes the text
+        } else {
+            endingPhase = "youwon";                   // second press skips to YOU WON
+            endingPostDoneFrames = 0;
+        }
+    }
+
+    // Draw the text up to the current character count, line-by-line.
+    const sub = ENDING_MESSAGE.substring(0, endingTypeChars);
+    const lines = sub.split("\n");
+    const size = 3;
+    const charH = 7 * size;
+    const lineGap = 14;
+    const lineH = charH + lineGap;
+    const totalH = ENDING_MESSAGE.split("\n").length * lineH;
+    const startY = -totalH / 2 + charH / 2;
+    for (let i = 0; i < lines.length; i++) {
+        if (!lines[i].length) continue;
+        drawPixelText(lines[i], 0, startY + i * lineH, size, "#ffffff", "#1a1a2a", null, "center");
+    }
+}
+
+// Big green YOU WON, then revert to the start screen.
+function endingYouWonUpdate() {
+    push();
+    fill(0); noStroke();
+    rect(-width / 2, -height / 2, width, height);
+    pop();
+
+    endingPostDoneFrames++;
+    drawPixelText("YOU WON", 0, 0, 10, "#3aff5a", "#0a3a14", null, "center");
+
+    if (endingPostDoneFrames > 240 || kb.presses("space") || kb.presses("enter")) {
+        // Reset all gameplay state and bounce to the start screen.
+        score = 0; levelNum = 1;
+        pdata.hp = 100;
+        pdata.hasKey = false;
+        timerFrames = LEVEL_SECONDS * 60;
+        timerActive = false;
+        levelPhase = "pre";
+        cratesSpawned = false;
+        keyDropArmed = false;
+        keySpawned = false;
+        for (const a of [...pdata.activeAttacks]) a.delete();
+        for (const s of [...turretShots]) s.delete();
+        transitionToStartScreen();
+    }
 }
 
 // ============================================================
@@ -773,35 +1379,80 @@ function easeOutBack(t) {
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-function createAttack(type) {
+// Bottle in the soldier's hand while he's CHARGING a throw — stays alive as
+// long as pdata.chargingThrow is set, lifts higher and pulses faster as the
+// charge fills (visual cue for how strong the throw will be).
+function spawnChargingBottle(type) {
+    if (pdata.carriedBottle) { pdata.carriedBottle.delete(); pdata.carriedBottle = null; }
+    const img = (type === "beer") ? beerBottleImg : molotovImg;
+    const held = Sprite.withSensor(player.x, player.y - 36, 32);
+    held.everyFrame = {};
+    held.img = img;
+    held.kind = "held";
+    held.rotationLock = false;
+    held.gravity = false;
+    held.everyFrame.follow = {
+        duration: Infinity,
+        f: (s) => {
+            const dir = player.facingRight ? 1 : -1;
+            const charge = Math.min(1, pdata.chargeFrames / 90);
+            // bottle lifts higher and rocks faster the longer you hold
+            s.x = player.x + dir * 42;
+            s.y = player.y - 36 - charge * 36;
+            s.rotation += dir * (4 + charge * 14);
+            s.vel.x = 0; s.vel.y = 0;
+            const pulse = 1 + Math.sin(pdata.chargeFrames * 0.45) * 0.06 * charge;
+            s.scale.x = pulse * dir;
+            s.scale.y = 1 + charge * 0.18;
+        },
+    };
+    pdata.carriedBottle = held;
+}
+
+function createAttack(type, charge = 1.0) {
     let a;
     let offsetX = 0, offsetY = 0;
     let attachToPlayer = true;
+    let img = null;
+    let imgScale = 1;
 
     if (type === "ground_punch") {
-        offsetX = 80; offsetY = 40;
+        // Alternate left/right hand each swing by varying the punch height.
+        pdata.lastHand = (pdata.lastHand === "L") ? "R" : "L";
+        offsetX = 80;
+        offsetY = (pdata.lastHand === "L") ? 26 : 54;   // L = high jab, R = body shot
         a = Sprite.withSensor(player.x + (player.facingRight ? offsetX : -offsetX), player.y + offsetY, 100, 60);
         a.life = 15;
+        img = punchBurstImg;
     } else if (type === "air_forward") {
         offsetX = 100; offsetY = 40;
         a = Sprite.withSensor(player.x + (player.facingRight ? offsetX : -offsetX), player.y + offsetY, 120, 40);
-        a.life = 8;
+        a.life = 10;
+        img = punchBurstImg;
+        imgScale = 1.2;
     } else if (type === "air_explosion") {
         a = Sprite.withSensor(player.x, player.y, 250);
         a.life = 25;
+        img = airExplosionImg;
     } else if (type === "molotov_throw" || type === "beer_throw" || type === "bullet") {
-        a = createProjectile(player, type);
+        a = createProjectile(player, type, charge);
         pdata.activeAttacks.add(a);
-        pdata.attackCooldown = 6; 
+        pdata.attackCooldown = 6;
         return;
     }
 
     a.type = type;
     a.facingRight = player.facingRight;
-    // Melee/explosion sensors are hit-detection only — keep them invisible.
+    // The hit sensor is now VISIBLE with its dedicated effect sprite — the
+    // punch starburst / air shockwave reads the attack at the contact point.
     // (Do NOT set sprite.debug: q5play 4.x's debug draw calls a removed
     // `_doFill` and throws every frame, which would crash gameplay.)
-    a.visible = false;
+    a.visible = true;
+    if (img) {
+        a.img = img;
+        a.scale.x = imgScale * (a.facingRight ? 1 : -1);
+        a.scale.y = imgScale;
+    }
 
     pdata.activeAttacks.add(a);
     pdata.attackCooldown = a.life + 10;
@@ -860,6 +1511,9 @@ function damageCrate(c) {
         score += 10;                // +10 per box broken
         spawnDebris(px, py, 9);     // full break: big burst of chips
         c.delete();                 // remove the body so the husk can't block the player
+        // If every turret is down, the FIRST crate destroyed after that drops
+        // the key — randomly out of whichever box the player smashes first.
+        if (keyDropArmed && !keySpawned) spawnKey(px, py);
         return;
     }
     c.img = c.hp === 2 ? crateFrames.hit : crateFrames.broken;
@@ -880,7 +1534,15 @@ function damageTurret(t, dmg) {
         spawnDebris(t.homeX ?? t.x, t.y, 12);
         score += 30;                            // +30 per turret
         spawnCrates();                          // boxes appear after the first turret falls
-        if ([...turrets].every(x => x.dead)) spawnKey();
+        // When the LAST turret falls, the key immediately drops from a random
+        // live crate — no need to smash one first.
+        if ([...turrets].every(x => x.dead) && !keySpawned) {
+            const live = [...crates].filter(c => c.kind === "crate");
+            const src = live.length ? live[Math.floor(Math.random() * live.length)] : null;
+            if (src) spawnKey(src.x, src.y);
+            else     spawnKey(player.x + 200, surfaceY - 100);
+        }
+        keyDropArmed = true;                    // (still also triggers on crate smash, harmless)
         return;
     }
     t.img = t.hp > 50 ? turretFrames.idle : turretFrames.fire;
@@ -893,13 +1555,29 @@ function damageTurret(t, dmg) {
 // ============================================================
 const LEVEL_SECONDS = 300;            // Mario-style countdown, per level
 const THRESHOLD_OFFSET = 520;         // distance past spawn where the trip-line sits
-const TURRET_REL_XS = [260, 820, 1450];      // turret x's relative to the trip-line
+const TURRET_REL_XS = [260, 820, 1450];      // (legacy) turret x's relative to the trip-line
 const CRATE_REL_XS  = [180, 560, 1080, 1650]; // crate x's (spawn after the 1st turret falls)
+
+// Per-level turret layouts. `ground` entries are x-offsets from the trip-line;
+// `flying` entries are { x, y } where y is a NEGATIVE offset from the surface
+// (turret floats that many px above the floor). Level 3 introduces flying
+// turrets; 4 and 5 mix more of them in for harder waves.
+const LEVEL_TURRETS = {
+    1: { ground: [260, 820, 1450], flying: [] },
+    2: { ground: [260, 820, 1450], flying: [] },
+    3: { ground: [260, 1300],           flying: [{ x: 780,  y: -260 }] },
+    4: { ground: [260, 1500],           flying: [{ x: 700, y: -240 }, { x: 1700, y: -320 }] },
+    5: { ground: [260, 1300, 2100],     flying: [{ x: 700, y: -240 }, { x: 1500, y: -360 }, { x: 1900, y: -200 }] },
+};
 const SHOT_DAMAGE = 10;               // half a heart per hit (5 hearts = 100 hp)
 const TURRET_FIRE_INTERVAL = 120;     // frames between a turret's shots
 const TURRET_WINDUP = 26;             // wind-up tell (frames) before it fires
 const TURRET_RANGE = 1100;            // turret only engages when the player is this close
 const TURRET_FACE_DIR = 1;            // flip to -1 if the turret art faces the wrong way
+
+const DOOR_OFFSET = 1900;             // door sits past the last crate
+const DOOR_W = SOVIET_DOOR_W;         // matches the loaded image dims (140 wide)
+const DOOR_H = SOVIET_DOOR_H;         // full corridor height (== surfaceY)
 
 let levelNum = 1;
 let score = 0;
@@ -908,90 +1586,241 @@ let thresholdX = THRESHOLD_OFFSET;
 let timerFrames = LEVEL_SECONDS * 60;
 let timerActive = false;
 let cratesSpawned = false;
-let keyCrateHome = null;
+let keyDropArmed = false;             // true once every turret is down — the next crate to break drops the key
 let keySpawned = false;
+let levelDoor = null;                 // exit door at the end of the level
+
+// Level-5 ending sequence state.
+let endingPhase = null;               // null | "approach" | "typewriter" | "youwon"
+let endingDesk = null;
+let endingButton = null;
+let endingTypeFrames = 0;
+let endingTypeChars = 0;
+let endingPostDoneFrames = 0;
+const ENDING_MESSAGE =
+    "YOU SAVED THE WORLD FROM NUCLEAR FALLOUT.\n" +
+    "BY STOPPING THE SUBMARINE FROM LAUNCHING THE NUKES,\n" +
+    "YOU PREVENTED CATASTROPHE.\n" +
+    " \n" +
+    "THE UNITED STATES THANKS YOU FOR YOUR SERVICE.";
+const TYPEWRITER_FRAMES_PER_CHAR = 2;     // ~30 chars/sec at 60fps
+
+function clearLevelEntities() {
+    for (const c of [...crates]) c.delete();
+    for (const t of [...turrets]) t.delete();
+    for (const s of [...turretShots]) s.delete();
+    if (window.theKey) { window.theKey.delete(); window.theKey = null; }
+    if (levelDoor) { levelDoor.delete(); levelDoor = null; }
+}
 
 // Wipe the level back to its "pre" state for a fresh run/restart. Nothing
 // spawns yet: turrets power up when the player trips the line, crates after
 // the first turret is destroyed.
 function resetLevel() {
-    for (const c of [...crates]) c.delete();
-    for (const t of [...turrets]) t.delete();
-    for (const s of [...turretShots]) s.delete();
-    if (window.theKey) { window.theKey.delete(); window.theKey = null; }
+    clearLevelEntities();
 
     levelPhase = "pre";
     thresholdX = player.x + THRESHOLD_OFFSET;
     timerFrames = LEVEL_SECONDS * 60;
     timerActive = false;
     cratesSpawned = false;
+    keyDropArmed = false;
     keySpawned = false;
-    keyCrateHome = null;
+    pdata.hasKey = false;
 }
 
-// Advance to the next wave further down the corridor (after grabbing the key).
+// Aggressive cleanup before any new level setup. Called from BOTH
+// startNextLevel() AND breachThreshold() so a stale border wall or prior
+// Soviet exit door can NEVER bleed into the new level — defense in depth
+// against the "border spliced into the door at level 3" issue.
+function cleanupForNewLevel() {
+    // Level 2 onwards: every corridor wall+door is gone for good. (walls live
+    // at every 6×height units — walls[0] at ≈-640, walls[1] at ≈3680, … —
+    // and walls[1] alone was enough to box the player in at level 3.)
+    if (levelNum >= 2) {
+        for (let i = 0; i < walls.length; i++) {
+            if (walls[i]) { walls[i].delete(); walls[i] = null; }
+            if (doors[i]) { doors[i].delete(); doors[i] = null; }
+        }
+    }
+    // Previous level's Soviet exit door is always wiped before the next one
+    // spawns — guarantees no ghost/overlap door survives the transition.
+    if (levelDoor) { levelDoor.delete(); levelDoor = null; }
+}
+
+// Build the level-specific layout. Always runs the defensive cleanup first
+// (regardless of whether startNextLevel already did it), then spawns this
+// level's fresh turrets + Soviet exit door.
+function setupCurrentLevel() {
+    cleanupForNewLevel();
+    spawnTurrets();
+    spawnDoor();
+}
+
+// Advance to the next wave further down the corridor (after entering the door).
+// Special-case: clearing LEVEL 5 ends the game — instead of spawning level 6,
+// we drop the player into the ending sequence (button on a desk → cutscene).
 function startNextLevel() {
-    for (const c of [...crates]) c.delete();
-    for (const t of [...turrets]) t.delete();
-    for (const s of [...turretShots]) s.delete();
-    if (window.theKey) { window.theKey.delete(); window.theKey = null; }
+    clearLevelEntities();
+
+    if (levelNum === 5) {
+        startEndingSequence();
+        return;
+    }
 
     levelNum += 1;
     score += 50;                      // +50 per new level unlocked
     levelPhase = "pre";
     thresholdX = player.x + THRESHOLD_OFFSET;
     cratesSpawned = false;
+    keyDropArmed = false;
     keySpawned = false;
-    keyCrateHome = null;
+    pdata.hasKey = false;
+
+    // Run cleanup IMMEDIATELY on advance — borders gone before the player
+    // even reaches the next trip-line.
+    cleanupForNewLevel();
 }
 
-// Player crossed the trip-line: start the clock and power up the turrets.
+// ============================================================
+// Level-5 ENDING: red button on a desk -> Undertale-style typewriter
+// cutscene -> green "YOU WON" -> back to the start screen.
+// ============================================================
+function startEndingSequence() {
+    gameState = "ending";
+    endingPhase = "approach";
+    endingTypeFrames = 0;
+    endingTypeChars = 0;
+    endingPostDoneFrames = 0;
+    cleanupForNewLevel();             // wipe any lingering turrets / doors
+
+    // Big desk + big red button spawn just ahead of the player so they walk a
+    // few steps to it. CRUCIAL: make them STATIC so they don't fall through
+    // the floor (dynamic sensors have gravity and would vanish in one frame).
+    const dx = player.x + 320;
+    const DESK_W = 320, DESK_H = 170;
+    const BUTTON_W = 160, BUTTON_H = 130;
+    const deskY = surfaceY - DESK_H / 2;                  // desk base on floor
+    endingDesk = Sprite.withSensor(dx, deskY, DESK_W, DESK_H, "static");
+    endingDesk.everyFrame = {};
+    endingDesk.img = deskImg;
+    endingDesk.kind = "desk";
+
+    // Button sits on TOP of the desk — its bottom edge meets the desk top.
+    const desktopY = deskY - DESK_H / 2;                  // top surface of desk
+    endingButton = Sprite.withSensor(dx, desktopY - BUTTON_H / 2 + 6, BUTTON_W, BUTTON_H, "static");
+    endingButton.everyFrame = {};
+    endingButton.img = buttonImg;
+    endingButton.kind = "button";
+}
+
+function transitionToStartScreen() {
+    if (endingButton) { endingButton.delete(); endingButton = null; }
+    if (endingDesk)   { endingDesk.delete();   endingDesk   = null; }
+    endingPhase = null;
+    allSprites._autoDraw = true;
+    // CRUCIAL: reset the camera to screen-center BEFORE the start screen
+    // re-renders. updateStartScreen() uses `translate(-camera.x, -camera.y)`
+    // for its coord math; if the camera is still at the player's level-5
+    // position (~x=8000), the whole submarine scene draws thousands of px
+    // off-screen and the YOU WON frame stays frozen on the canvas.
+    camera.x = width / 2;
+    camera.y = height / 2;
+    setWorldVisible(false);
+    initStartScreen();
+    gameState = "startscreen";
+}
+
+// Player crossed the trip-line: start the clock (once, for the whole run),
+// then build out the current level via setupCurrentLevel (which re-runs
+// cleanup as a second pass).
 function breachThreshold() {
     levelPhase = "combat";
-    timerFrames = LEVEL_SECONDS * 60;
+    if (!timerActive) {            // first ever breach — start the run timer
+        timerFrames = LEVEL_SECONDS * 60;
+    }
     timerActive = true;
-    spawnTurrets();
+    setupCurrentLevel();
+}
+
+function spawnDoor() {
+    if (levelDoor) { levelDoor.delete(); levelDoor = null; }
+    // Door spans the FULL SCREEN (top edge at y=0, bottom edge at y=height)
+    // and is SOLID — covers everything top-to-bottom including the lower
+    // exit beneath the surface line. With the key the open animation deletes
+    // the blocker, plays a sensor-only shrink visual, and advances the level.
+    const dy = DOOR_H / 2;                // centred vertically across the screen
+    const d = new terrain.Sprite(thresholdX + DOOR_OFFSET, dy, DOOR_W, DOOR_H);
+    d.everyFrame = {};
+    d.img = doorImg;
+    d.kind = "door";
+    d.opened = false;
+    levelDoor = d;
 }
 
 function spawnTurrets() {
-    // Drop the turret so its visible base (treads) lands on the floor.
-    const turretRestY = surfaceY - TURRET_H / 2 + TURRET_FLOOR_NUDGE;
-    TURRET_REL_XS.forEach(rx => {
-        const tx = thresholdX + rx;
-        const t = Sprite.withSensor(tx, turretRestY, TURRET_W, TURRET_H, "static");
-        t.everyFrame = {};
-        t.homeX = tx;
-        t.kind = "turret";
-        t.hp = 100;
-        t.dead = false;
-        t.active = false;             // goes live when the power-on rise finishes
-        t.fireTimer = TURRET_FIRE_INTERVAL + Math.floor(Math.random() * 50);
-        t.img = turretFrames.idle;
-        t.restY = turretRestY;
-        turrets.add(t);
-        riseTurret(t);                // turn-on animation; flips t.active true at the end
-    });
+    const cfg = LEVEL_TURRETS[Math.min(levelNum, 5)] || LEVEL_TURRETS[1];
+    const groundRestY = surfaceY - TURRET_H / 2 + TURRET_FLOOR_NUDGE;
+
+    // GROUND turrets — rise out of the floor, exactly as before.
+    cfg.ground.forEach(rx => makeTurret(thresholdX + rx, groundRestY, /*flying=*/false));
+
+    // FLYING turrets — appear in the air at the configured offset above the
+    // surface. They don't rise out of the floor; they pop in active and hover.
+    cfg.flying.forEach(({ x, y }) => makeTurret(thresholdX + x, surfaceY + y, /*flying=*/true));
+}
+
+function makeTurret(tx, ty, flying) {
+    const t = Sprite.withSensor(tx, ty, TURRET_W, TURRET_H, "static");
+    t.everyFrame = {};
+    t.homeX = tx;
+    t.kind = "turret";
+    t.flying = flying;
+    t.hp = flying ? 70 : 100;          // flyers a bit easier to kill (smaller hit area in feel)
+    t.dead = false;
+    t.active = false;
+    t.fireTimer = TURRET_FIRE_INTERVAL + Math.floor(Math.random() * 50);
+    t.img = turretFrames.idle;
+    t.restY = ty;
+    turrets.add(t);
+    if (flying) {
+        // Pop-in: punch + bob, active immediately (player must aim by moving
+        // around and throwing bottles to reach them).
+        t.active = true;
+        punchScale(t, 0.2, 12);
+        const phase = Math.random() * Math.PI * 2;
+        let pf = 0;
+        t.everyFrame.hover = { duration: Infinity, f: (s) => {
+            pf++;
+            s.y = ty + Math.sin(phase + pf * 0.05) * 22;     // gentle airborne bob
+        }};
+    } else {
+        riseTurret(t);                  // ground turret rise + power-on
+    }
 }
 
 function spawnCrates() {
     if (cratesSpawned) return;
     cratesSpawned = true;
-    const crateY = surfaceY - CRATE_H / 2;
-    CRATE_REL_XS.forEach((rx, i) => {
+    // The crate art is 150x170 but has ~40 px of empty padding at the bottom
+    // (the wooden base doesn't reach the image edge). We give the COLLIDER a
+    // shorter height than the image so physics rests the collider on the
+    // floor while the bigger image extends below it — visible base on floor.
+    const CRATE_COLLIDER_H = 90;       // shorter -> visible image sinks lower onto the red floor stripe
+    const restY = surfaceY - CRATE_COLLIDER_H / 2;
+    CRATE_REL_XS.forEach((rx) => {
         const cx = thresholdX + rx;
-        const c = new Sprite(cx, crateY, CRATE_W, CRATE_H);  // solid + dynamic = kickable
+        const c = new Sprite(cx, restY, CRATE_W, CRATE_COLLIDER_H);
         c.everyFrame = {};
         c.homeX = cx;
         c.kind = "crate";
         c.hp = 3;
-        c.img = crateFrames.full;
+        c.img = crateFrames.full;     // 150x170 img — extends below the shorter collider
         c.rotationLock = true;
         c.bounciness = 0;
-        c.friction = 0.25;            // slides a while after a kick, then settles
-        c.isKeyCrate = (i === CRATE_REL_XS.length - 1);
-        if (c.isKeyCrate) keyCrateHome = { x: cx, y: crateY };
+        c.friction = 0.25;
         crates.add(c);
-        punchScale(c, 0.2, 8);        // little pop as it drops in
+        punchScale(c, 0.2, 8);
     });
 }
 
@@ -1040,15 +1869,19 @@ function updateTurrets() {
 // shell flies in exactly the direction it's launched (velocity re-asserted each
 // frame so gravity can't bend it), leaving a short glowing trail.
 function fireTurretShot(t) {
-    // Muzzle sits at the barrel: turret center, nudged toward the player and up
-    // to roughly barrel height.
+    // Muzzle sits at the barrel. Shells are SLOW enough that the player can
+    // outrun them by sprinting away, and the turret aims with random angular
+    // spread so not every shot is a hit — many fly wide.
     const dirX = (player.x < t.x) ? -1 : 1;
     const sx = t.x + dirX * (TURRET_W * 0.42);
     const sy = t.y - TURRET_H * 0.12;
     const dx = player.x - sx, dy = (player.y - 20) - sy;
-    const d = Math.hypot(dx, dy) || 1;
-    const speed = 15;
-    const vx = (dx / d) * speed, vy = (dy / d) * speed;
+    const speed = 11;                                // 11 px/f, only +1 over walk speed
+    const baseAngle = Math.atan2(dy, dx);
+    const spread = (Math.random() - 0.5) * 0.95;     // ±~27° random aim error — many shots miss
+    const angle = baseAngle + spread;
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed;
 
     const shot = Sprite.withSensor(sx, sy, 42);
     shot.everyFrame = {};
@@ -1057,25 +1890,12 @@ function fireTurretShot(t) {
     shot.rotationLock = true;
     shot.spent = false;
     shot.vel.x = vx; shot.vel.y = vy;
-    // Re-assert velocity each frame so gravity can't bend it. Also do a manual
-    // proximity check against the player — q5play's overlap callback can drop
-    // collisions for fast sensors, and every shell MUST be able to land its hit.
-    shot.everyFrame.fly = {
-        duration: Infinity,
-        f: (s) => {
-            s.vel.x = vx; s.vel.y = vy;
-            if (s.spent) return;
-            const dx = s.x - player.x, dy = s.y - player.y;
-            // player collider is 100×180; shot radius ~21. Box check is plenty.
-            if (Math.abs(dx) < 50 + 21 && Math.abs(dy) < 90 + 21) {
-                s.spent = true;
-                pdata.hp -= SHOT_DAMAGE;
-                flashPlayerHurt();
-                spawnDebris(s.x, s.y, 4);
-                s.delete();
-            }
-        },
-    };
+    // PURE BALLISTIC: shells fly dead-straight in their fired direction. If
+    // the player walks out of the trajectory the shell whistles past — it
+    // does NOT track. We re-assert velocity each frame so gravity can't bend
+    // it; q5play's `player.overlaps(turretShots, onPlayerShot)` handles the
+    // actual hit detection (no proximity-fudge any more).
+    shot.everyFrame.fly = { duration: Infinity, f: (s) => { s.vel.x = vx; s.vel.y = vy; } };
     turretShots.add(shot);
     despawnAfter(shot, 170);
 
@@ -1123,15 +1943,49 @@ function updateLevel() {
 
     updateTurrets();
 
-    // Grab the key -> clear the level (+50) and start the next wave.
+    // Touch the key -> stash it in the player's inventory. The key alone
+    // doesn't end the level any more; you still have to reach the door.
     const k = window.theKey;
     if (k && !k.collected &&
         Math.abs(player.x - k.x) < 95 && Math.abs(player.y - k.y) < 140) {
         k.collected = true;
         k.delete();
         window.theKey = null;
-        startNextLevel();
+        pdata.hasKey = true;
+        punchScale(player, 0.15, 8);   // tiny "got it" cue (animator overwrites x-flip next frame, fine)
     }
+
+    // Reach the door WITH the key -> opens, advance to the next level.
+    if (levelDoor && pdata.hasKey && !levelDoor.opened &&
+        Math.abs(player.x - levelDoor.x) < DOOR_W / 2 + 60 &&
+        Math.abs(player.y - levelDoor.y) < DOOR_H / 2 + 80) {
+        levelDoor.opened = true;
+        openDoorAndAdvance(levelDoor);
+    }
+}
+
+// Door "open" animation — DELETE the solid blocker (so the player can walk
+// through), then play a slide-shrink sensor visual at the same spot, then
+// startNextLevel(). This way the open door never blocks while it's animating.
+function openDoorAndAdvance(d) {
+    const dx = d.x, dy = d.y, dw = DOOR_W, dh = DOOR_H;
+    d.delete();                          // clear the solid wall
+    levelDoor = null;
+    const ghost = Sprite.withSensor(dx, dy, dw, dh);
+    ghost.everyFrame = {};
+    ghost.img = doorImg;
+    let f = 0;
+    const frames = 14;
+    ghost.everyFrame.open = {
+        duration: frames + 2,
+        f: (self) => {
+            f++;
+            const k = 1 - Math.min(1, f / frames);
+            self.scale.x = k;
+            self.scale.y = 1 + (1 - k) * 0.05;   // tiny squish up as it slides
+            if (f >= frames) { self.delete(); startNextLevel(); }
+        },
+    };
 }
 
 // ============================================================
@@ -1142,17 +1996,23 @@ function pad6(n) { return String(Math.max(0, Math.floor(n))).padStart(6, "0"); }
 
 // Blocky 8-bit heart (7x6). "1" = pixel on.
 const HEART_BMP = ["0110110", "1111111", "1111111", "0111110", "0011100", "0001000"];
-function drawHeart(x, y, pxsz, filled) {
+function drawHeart(x, y, pxsz, fillType /* "full" | "half" | "empty" */) {
     push();
     noStroke();
-    const body = filled ? "#ff3344" : "#3a2230";
-    const shine = "#ff9aa2";
+    const bodyFull  = "#ff3344";
+    const bodyEmpty = "#3a2230";
+    const shine     = "#ff9aa2";
     for (let r = 0; r < HEART_BMP.length; r++) {
         for (let c = 0; c < HEART_BMP[r].length; c++) {
             if (HEART_BMP[r][c] !== "1") continue;
-            fill(body);
+            // "half" fills only the LEFT side of the heart so half-a-heart of
+            // damage is visible immediately (cols 0-3 = left + centre).
+            let isFilled = (fillType === "full") || (fillType === "half" && c <= 3);
+            fill(isFilled ? bodyFull : bodyEmpty);
             rect(x + c * pxsz, y + r * pxsz, pxsz, pxsz);
-            if (filled && r === 1 && (c === 1 || c === 5)) { // tiny glints
+            // tiny glints on the filled lobes
+            if (isFilled && r === 1 &&
+                ((c === 1) || (fillType === "full" && c === 5))) {
                 fill(shine);
                 rect(x + c * pxsz, y + r * pxsz, pxsz, pxsz);
             }
@@ -1177,23 +2037,30 @@ function drawHUD() {
     drawPixelText("LEVEL " + levelNum,    0,     rowY, S, "#5fe1ff", OUT, null, "center");
     drawPixelText("TIME " + secs, rightX, rowY, S, secs <= 30 ? "#ff5560" : "#ffffff", OUT, null, "right");
 
-    // Hearts row, under the score.
-    const fullHearts = Math.max(0, Math.min(5, Math.ceil(pdata.hp / 20)));
+    // Hearts row, under the score — half-heart granularity so each 10-hp shot
+    // is immediately visible (each shot deducts exactly half a heart).
+    const hp = Math.max(0, pdata.hp);
+    const fullCount = Math.floor(hp / 20);
+    const showHalf = (hp % 20) >= 10 && hp > 0;
     const hpx = 5, heartW = 7 * hpx;
     const heartY = rowY + (7 * S) / 2 + 14;
     for (let i = 0; i < 5; i++) {
-        drawHeart(leftX + i * (heartW + 14), heartY, hpx, i < fullHearts);
+        let ft = "empty";
+        if (i < fullCount) ft = "full";
+        else if (i === fullCount && showHalf) ft = "half";
+        drawHeart(leftX + i * (heartW + 14), heartY, hpx, ft);
     }
     pop();
 }
 window.q5.addHook("postdraw", drawHUD);
 
-// Once every turret is cleared, a key pops out of the designated crate.
-function spawnKey() {
+// Key pops out of whichever crate the player just smashed (passed as x,y).
+// Called from damageCrate() once `keyDropArmed` is set (i.e. every turret is
+// dead). Random because the player picks which crate to break first.
+function spawnKey(spawnX, spawnY) {
     if (keySpawned) return;
     keySpawned = true;
-    const live = [...crates].find(c => c.isKeyCrate && c.kind === "crate");
-    const pos = live ? { x: live.x, y: live.y } : (keyCrateHome || { x: player.x, y: surfaceY - 60 });
+    const pos = { x: spawnX, y: spawnY };
 
     const k = new Sprite(pos.x, pos.y - 10, KEY_W, KEY_H);
     k.everyFrame = {};
@@ -1247,4 +2114,7 @@ window.gameDebug = () => ({
     activeTurrets: [...turrets].filter(t => t.active && !t.dead).length,
     deadTurrets: [...turrets].filter(t => t.dead).length,
     key: !!window.theKey,
+    keyDropArmed,
+    hasKey: !!pdata.hasKey,
+    door: levelDoor ? { x: Math.round(levelDoor.x), opened: !!levelDoor.opened } : null,
 });

@@ -108,7 +108,28 @@ export function initStartScreen() {
         C_LOAD_BAR_BORDER = color("#4466aa");
         palettesInitialized = true;
     }
+    // Reset the WHOLE scene so re-entering the start screen (e.g. after the
+    // level-5 YOU WON sequence) shows the submarine title from the top, not
+    // whatever frame of the dive/loading we left mid-stream.
     done = false;
+    phase = "idle";
+    frameCt = 0;
+    subY = 110;
+    subBob = 0;
+    diveTimer = 0;
+    waveOffset = 0;
+    surfaceDisturbance = 0;
+    lastSplashTrigger = -999;
+    loadingStarted = false;
+    loadingStartTime = 0;
+    factIdx = 0;
+    factSwapTimer = 0;
+    factFadeAlpha = 255;
+    factFadingOut = false;
+    blinkFlag = true;
+    blinkTimer = 0;
+    splashes.length = 0;
+    bubbles.length = 0;
 }
 
 export function isStartScreenDone() {
