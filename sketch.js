@@ -52,7 +52,10 @@ import {
     handleStartScreenClick,
     isStartScreenDone,
     drawPixelText,
-} from "./startscreen.js?v=2";
+    stopStartScreenMusic,
+    startAlarm,
+    stopAlarm,
+} from "./startscreen.js?v=6";
 import { GameOverScreen } from "./deathscreen.js?v=2";
 
 // ============================================================
@@ -977,6 +980,7 @@ q5.update = function () {
    if (gameState === "startscreen") {
     updateStartScreen();
     if (isStartScreenDone()) {
+        stopStartScreenMusic();
         gameState = "playing";
         setWorldVisible(true);
         // Sprites have been falling under gravity during the start screen. Reset them.
@@ -994,6 +998,7 @@ q5.update = function () {
             // — the death screen is opaque and we don't want gameplay sprites
             // rendered on top of it. restartGame() flips it back on.
             gameState = "gameover";
+            stopAlarm();                   // player died — silence the turret alarm
             allSprites._autoDraw = false;
             gameOverScreen = new GameOverScreen({
                 quote: '"YOU FAILED, SOLDIER."',
@@ -1688,6 +1693,7 @@ function startNextLevel() {
 // ============================================================
 function startEndingSequence() {
     gameState = "ending";
+    stopAlarm();                       // player beat the game — silence the alarm
     endingPhase = "approach";
     endingTypeFrames = 0;
     endingTypeChars = 0;
@@ -1787,6 +1793,7 @@ function makeTurret(tx, ty, flying) {
         // Pop-in: punch + bob, active immediately (player must aim by moving
         // around and throwing bottles to reach them).
         t.active = true;
+        startAlarm();                   // turrets are live — sound the alarm
         punchScale(t, 0.2, 12);
         const phase = Math.random() * Math.PI * 2;
         let pf = 0;
@@ -1840,6 +1847,7 @@ function riseTurret(t) {
                 self.y = self.restY;
                 shakeSprite(self, 4, 6);   // little thud as it locks in
                 self.active = true;        // turret is now live and hunting the player
+                startAlarm();              // turrets are live — sound the alarm
                 punchScale(self, 0.15, 8); // power-on pop
             }
         },

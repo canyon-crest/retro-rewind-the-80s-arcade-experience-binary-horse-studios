@@ -67,6 +67,158 @@ let palettesInitialized = false;
 let done = false;
 
 // ============================================================
+// Start-screen music (gapless looping tracks)
+// ============================================================
+// Web Audio (not <audio loop> or q5.sound) so loops are GAPLESS. The plain
+// HTMLAudioElement loop has an audible gap on restart, and these files also
+// carry a few ms of silence padding. A looping AudioBufferSourceNode loops
+// sample-accurately, and per track we set loopStart/loopEnd to skip the silent
+// padding so each loop's end butts straight up against its start, no dead air.
+//
+// Tracks (only one plays at a time — they never overlap in this game):
+//   "melody" — title screen (plays from initStartScreen)
+//   "drums"  — swaps in on the START click and runs through the dive + loading
+//              screen, then stops when the start screen hands off to gameplay.
+//   "alarm"  — kicks in when the turrets go live and loops for the rest of the
+//              run, until the player dies/resets or beats the game.
+const MUSIC_VOLUME = 0.5;
+const SILENCE_THRESHOLD = 0.015; // ~500/32768 — matches the offline analysis
+
+const TRACKS = {
+    melody: { url: "8bitmelodickinda.wav", buffer: null, loopStart: 0, loopEnd: 0, loading: false },
+    drums:  { url: "8bitonlydrums9bit.wav", buffer: null, loopStart: 0, loopEnd: 0, loading: false },
+    alarm:  { url: "8bitalarm.wav",         buffer: null, loopStart: 0, loopEnd: 0, loading: false },
+};
+
+let audioCtx = null;
+let musicGain = null;
+let currentSource = null;     // currently-playing AudioBufferSourceNode
+let playingTrack = null;      // name of the track that source is playing
+let desiredTrack = null;      // name of the track we WANT playing (or null)
+let gestureHooked = false;
+
+function ensureAudioCtx() {
+    if (!audioCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new Ctx();
+        musicGain = audioCtx.createGain();
+        musicGain.gain.value = MUSIC_VOLUME;
+        musicGain.connect(audioCtx.destination);
+    }
+    return audioCtx;
+}
+
+// Find the first/last non-silent sample across all channels so the loop skips
+// any leading/trailing silence the file was exported with.
+function computeLoopBounds(track, buffer) {
+    const len = buffer.length;
+    const chans = [];
+    for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
+    const amp = (i) => {
+        let m = 0;
+        for (let c = 0; c < chans.length; c++) { const v = Math.abs(chans[c][i]); if (v > m) m = v; }
+        return m;
+    };
+    let first = 0;
+    while (first < len && amp(first) < SILENCE_THRESHOLD) first++;
+    let last = len - 1;
+    while (last > first && amp(last) < SILENCE_THRESHOLD) last--;
+    if (first >= last) { first = 0; last = len - 1; } // all-silent guard
+    track.loopStart = first / buffer.sampleRate;
+    track.loopEnd = (last + 1) / buffer.sampleRate;
+}
+
+function stopCurrentSource() {
+    if (currentSource) {
+        try { currentSource.stop(); } catch (e) {}
+        try { currentSource.disconnect(); } catch (e) {}
+        currentSource = null;
+    }
+    playingTrack = null;
+}
+
+async function loadTrack(name) {
+    const track = TRACKS[name];
+    if (track.buffer || track.loading) return;
+    track.loading = true;
+    try {
+        const ctx = ensureAudioCtx();
+        const resp = await fetch(track.url);
+        const arr = await resp.arrayBuffer();
+        const buf = await ctx.decodeAudioData(arr);
+        track.buffer = buf;
+        computeLoopBounds(track, buf);
+        applyMusic(); // buffer is ready now — start it if it's still wanted
+    } catch (e) {
+        console.warn("Music track failed to load:", name, e);
+    } finally {
+        track.loading = false;
+    }
+}
+
+// Reconcile what's playing with `desiredTrack`. Idempotent and safe to call
+// repeatedly (from gesture/resume callbacks, on load completion, on switch).
+function applyMusic() {
+    if (!desiredTrack) { stopCurrentSource(); return; }
+    if (playingTrack === desiredTrack && currentSource) return; // already correct
+
+    const track = TRACKS[desiredTrack];
+    if (!track.buffer) { loadTrack(desiredTrack); return; } // start once decoded
+
+    const ctx = ensureAudioCtx();
+    if (ctx.state === "suspended") {
+        // Browsers keep the context suspended until a user gesture. Try to
+        // resume now, and also reconcile again on the first pointer/key.
+        ctx.resume().then(applyMusic).catch(() => {});
+        hookGestureResume();
+        return;
+    }
+
+    stopCurrentSource();
+    const src = ctx.createBufferSource();
+    src.buffer = track.buffer;
+    src.loop = true;
+    src.loopStart = track.loopStart;
+    src.loopEnd = track.loopEnd;
+    src.connect(musicGain);
+    src.start(0, track.loopStart);
+    currentSource = src;
+    playingTrack = desiredTrack;
+}
+
+function hookGestureResume() {
+    if (gestureHooked) return;
+    gestureHooked = true;
+    const resume = () => {
+        window.removeEventListener("pointerdown", resume);
+        window.removeEventListener("keydown", resume);
+        gestureHooked = false;
+        if (audioCtx) audioCtx.resume().then(applyMusic).catch(() => {});
+        else applyMusic();
+    };
+    window.addEventListener("pointerdown", resume, { once: true });
+    window.addEventListener("keydown", resume, { once: true });
+}
+
+function setTrack(name) {
+    desiredTrack = name;
+    ensureAudioCtx();
+    applyMusic();
+}
+
+// Public controls.
+export function startStartScreenMusic() { setTrack("melody"); }  // title theme
+export function startLoadingMusic()     { setTrack("drums"); }   // dive + loading
+export function stopStartScreenMusic()  { setTrack(null); }      // silence
+
+// Gameplay alarm — turrets are live. Idempotent: safe to call every frame a
+// turret activates (won't restart if it's already going).
+export function startAlarm() { setTrack("alarm"); }
+// Only silence if the alarm is actually what's playing, so this can't stomp on
+// the title/loading music in any unexpected ordering.
+export function stopAlarm()  { if (desiredTrack === "alarm") setTrack(null); }
+
+// ============================================================
 // Public API
 // ============================================================
 export function initStartScreen() {
@@ -130,6 +282,9 @@ export function initStartScreen() {
     blinkTimer = 0;
     splashes.length = 0;
     bubbles.length = 0;
+
+    // Kick off the title-screen music loop.
+    startStartScreenMusic();
 }
 
 export function isStartScreenDone() {
@@ -150,6 +305,9 @@ export function handleStartScreenClick(mx, my) {
 
     if (ix >= btnX && ix <= btnX + btnW && iy >= btnY && iy <= btnY + btnH) {
         phase = "diving";
+        // Swap the title melody out for the drums-only track, which runs
+        // through the dive + loading screen until gameplay begins.
+        startLoadingMusic();
     }
 }
 
