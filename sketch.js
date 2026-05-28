@@ -11,19 +11,22 @@ window.c64Text = {
 };
 
 canvas.style.position = "fixed";
+canvas.style.zIndex = 37;
 
 window.onresize = function() {
-	if (window.innerHeight / window.innerWidth > height / width) {
-		canvas.style.width = "100%";
-		canvas.style.height = `${(height / width) * window.innerWidth}px`;
-		canvas.style.left = "0";
-		canvas.style.top = `${(window.innerHeight - (height / width) * window.innerWidth) * 0.5}px`; // center the canvas vertically
-	}
-	else {
-		canvas.style.width = `${(width / height) * window.innerHeight}px`;
-		canvas.style.height = "100%";
-		canvas.style.left = `${(window.innerWidth - (width / height) * window.innerHeight) * 0.5}px`; // center the canvas horizontally
-		canvas.style.top = "0";
+	for (let c of [canvas, document.getElementById("supercanvas")]) {
+		if (window.innerHeight / window.innerWidth > height / width) {
+			c.style.width = "100%";
+			c.style.height = `${(height / width) * window.innerWidth}px`;
+			c.style.left = "0";
+			c.style.top = `${(window.innerHeight - (height / width) * window.innerWidth) * 0.5}px`; // center the canvas vertically
+		}
+		else {
+			c.style.width = `${(width / height) * window.innerHeight}px`;
+			c.style.height = "100%";
+			c.style.left = `${(window.innerWidth - (width / height) * window.innerHeight) * 0.5}px`; // center the canvas horizontally
+			c.style.top = "0";
+		}
 	}
 }
 window.onresize();
@@ -32,7 +35,9 @@ window.GAMESTATE = {
     keys: 0,
     timer: 300,
     score: 0,
-    ammo: {molotov: 0, beer: 0, bullet: 0}
+    ammo: {molotov: 0, beer: 0, bullet: 0},
+
+	screen: "title"
 };
 
 allSprites.everyFrame = {};
@@ -43,7 +48,8 @@ camera.x = 0;
 camera.y = height / 2;
 world.gravity.y = 37;
 
-import { createProjectile, handleProjectileHit, gotItem } from "./items.js";
+import {createProjectile, handleProjectileHit, gotItem} from "./items.js";
+import {initStartScreen, updateStartScreen, handleStartScreenClick, isStartScreenDone} from "./startscreen.js";
 
 let pdata = {
     attackCooldown: 0,
@@ -203,74 +209,93 @@ function attackImageFor(type) {
     }[type] || "\u{1f98a}";
 }
 
+initStartScreen();
+
 q5.update = function () {
-    const positionAlongCorridor = camera.x % (height * 6);
+	if (GAMESTATE.screen === "playing") {
+	    const positionAlongCorridor = camera.x % (height * 6);
+	
+	    image(corridorBG, (3 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
+	    if (positionAlongCorridor < 0) image(corridorBG, (-3 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
+	    else if (positionAlongCorridor > height * 6 - width) image(corridorBG, (9 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
+	
+	    if (jumpSensor.overlapping(terrain)) {
+	        // CONSTANT
+	        pdata.groundedTimer = 3; // stay "grounded" for 3 frames after leaving a surface
+	    } else if (pdata.groundedTimer > 0) {
+	        pdata.groundedTimer--;
+	    }
+	
+	    const actions = computePlayerActions(pdata, player, kb);
+	
+	    player.vel.x = actions.moveX;
+	    player.facingRight = actions.facingRight;
+	
+	    if (actions.jump) {
+	        player.vel.y = -16; // CONSTANT
+	        pdata.groundedTimer = 0;
+	    }
+	
+	    camera.x += (player.x - camera.x) * 0.67;
+	
+	    if (pdata.attackAnimation) {
+	        player.img = pdata.attackAnimation;
+	    } else {
+	        player.img = "\u{1f98a}";
+	    }
+	
+	    const transitionResult = computeStateTransitions(pdata, actions);
+	
+	    // apply side-effects from transitions
+	    if (transitionResult.startupStarted) {
+	        player.color = "pink";
+	    }
+	
+	    if (transitionResult.spawnAttack) {
+	        createAttack(transitionResult.spawnAttack);
+	        player.color = "white";
+	    }
+	
+	    for (let i = 0; i < allSprites.length; i++) {
+	        const sprite = allSprites[i];
+	        if (!sprite.everyFrame) {
+	            throw "no everyFrame object";
+	        }
+	
+	        const everyFrame = Object.entries(sprite.everyFrame);
+	        
+	        for (let j = 0; j < everyFrame.length; j++) {
+	            everyFrame[j][1].f(sprite);
+	            everyFrame[j][1].duration--;
+	            if (everyFrame[j][1].duration <= 0) {
+	                delete sprite.everyFrame[everyFrame[j][0]];
+	                everyFrame.splice(j, 1);
+	                j--;
+	            }
+	        }
+	    }
+	}
+	else if (GAMESTATE.screen === "title") {
+		updateStartScreen();
+		if (isStartScreenDone()) {
+			GAMESTATE.screen = "playing";
+			supercanvas.style.display = "none";
+		}
+	}
+}
 
-    image(corridorBG, (3 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
-    if (positionAlongCorridor < 0) image(corridorBG, (-3 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
-    else if (positionAlongCorridor > height * 6 - width) image(corridorBG, (9 * height - width * 0.5) - positionAlongCorridor, 0, height * 6, height);
-
-    if (jumpSensor.overlapping(terrain)) {
-        // CONSTANT
-        pdata.groundedTimer = 3; // stay "grounded" for 3 frames after leaving a surface
-    } else if (pdata.groundedTimer > 0) {
-        pdata.groundedTimer--;
-    }
-
-    const actions = computePlayerActions(pdata, player, kb);
-
-    player.vel.x = actions.moveX;
-    player.facingRight = actions.facingRight;
-
-    if (actions.jump) {
-        player.vel.y = -16; // CONSTANT
-        pdata.groundedTimer = 0;
-    }
-
-    camera.x += (player.x - camera.x) * 0.67;
-
-    if (pdata.attackAnimation) {
-        player.img = pdata.attackAnimation;
-    } else {
-        player.img = "\u{1f98a}";
-    }
-
-    const transitionResult = computeStateTransitions(pdata, actions);
-
-    // apply side-effects from transitions
-    if (transitionResult.startupStarted) {
-        player.color = "pink";
-    }
-
-    if (transitionResult.spawnAttack) {
-        createAttack(transitionResult.spawnAttack);
-        player.color = "white";
-    }
-
-    for (let i = 0; i < allSprites.length; i++) {
-        const sprite = allSprites[i];
-        if (!sprite.everyFrame) {
-            throw "no everyFrame object";
-        }
-
-        const everyFrame = Object.entries(sprite.everyFrame);
-        
-        for (let j = 0; j < everyFrame.length; j++) {
-            everyFrame[j][1].f(sprite);
-            everyFrame[j][1].duration--;
-            if (everyFrame[j][1].duration <= 0) {
-                delete sprite.everyFrame[everyFrame[j][0]];
-                everyFrame.splice(j, 1);
-                j--;
-            }
-        }
-    }
+window.mousePressed = function() {
+	if (GAMESTATE.screen === "title") {
+		handleStartScreenClick(mouseX, mouseY);
+	}
 }
 
 q5.postProcess = function() {
-	fill("white");
-	textSize(24);
-	text(`M ${GAMESTATE.ammo.molotov} B ${GAMESTATE.ammo.beer} X ${GAMESTATE.ammo.bullet}   |   SCORE ${GAMESTATE.score}   |   TIME ${GAMESTATE.timer}   |   ${"\u{1f511}".repeat(GAMESTATE.keys)}`, width * -0.5, height * -0.5 + 24);
+	if (GAMESTATE.screen !== "title") {
+		fill("white");
+		textSize(24);
+		text(`M ${GAMESTATE.ammo.molotov} B ${GAMESTATE.ammo.beer} X ${GAMESTATE.ammo.bullet}   |   SCORE ${GAMESTATE.score}   |   TIME ${GAMESTATE.timer}   |   ${"\u{1f511}".repeat(GAMESTATE.keys)}`, width * -0.5, height * -0.5 + 24);
+	}
 }
 
 function computeStateTransitions(pdata, actions) {
