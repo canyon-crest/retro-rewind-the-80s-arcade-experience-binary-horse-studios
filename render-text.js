@@ -3,11 +3,12 @@ function textToCroppedDataUri(text) {
     const ctx = canvas.getContext('2d');
     
     // Set initial size large enough for standard text
-    canvas.width = 500;
+    canvas.width = 1000;
     canvas.height = 100;
     
     // Render text
-    ctx.font = `36px C64`;
+    ctx.font = `72px C64`;
+    ctx.fillStyle = "white";
     ctx.textBaseline = 'top';
     ctx.fillText(text, 0, 0);
     
