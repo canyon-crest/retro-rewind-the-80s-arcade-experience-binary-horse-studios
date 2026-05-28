@@ -7,9 +7,6 @@ const ctx = document.getElementById("supercanvas").getContext("2d");
 function fill(c) {
     if (typeof c === "string") {
         ctx.fillStyle = c;
-    } else if (c.levels) {
-        const [r, g, b, a] = c.levels;
-        ctx.fillStyle = `rgba(${r},${g},${b},${a / 255})`;
     } else {
         ctx.fillStyle = c.toString();
     }
@@ -165,7 +162,7 @@ export function updateStartScreen() {
     ctx.imageSmoothingEnabled = false;
 
     // Fill the entire visible canvas with black
-    fill(0);
+    ctx.fillStyle = "black";
     rect(0, 0, width, height);
 
     // Stretch 320×240 grid to fill the canvas
