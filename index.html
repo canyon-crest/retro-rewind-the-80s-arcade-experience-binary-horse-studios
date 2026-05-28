@@ -8,7 +8,7 @@
     <style>
         @font-face {
             font-family: 'C64';
-            src: url('/fonts/C64_Pro-STYLE.ttf') format('truetype');
+            src: url('C64_Pro-STYLE.ttf') format('truetype');
             font-weight: normal;
             font-style: normal;
             font-display: block;
@@ -32,13 +32,13 @@
     <script src="render-text.js"></script>
     
     <!-- q5 + q5play (online) -->
-    <script type="module" src="q5play.js"></script>
+    <script type="module" src="https://q5js.org/q5.js"></script>
     <script type="importmap">
         { "imports": {
             "box2d3-wasm": "https://q5play.org/Box2D.deluxe.mjs"
         } }
     </script>
-    <script type="module" src="https://q5play.org/q5play.js"></script>
+    <script type="module" src="q5play.js"></script>
 
     <!-- Your sketch -->
     <script type="module" src="sketch.js"></script>
